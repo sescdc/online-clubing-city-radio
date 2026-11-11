@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101013">
+<meta name="description" content="Tune into local hip-hop and R&B radio or meet on one nationwide floor.">
+<title>Online Clubing | Hip-Hop Radio</title>
+<link rel="stylesheet" href="club.css">
+<script src="club.js" defer></script>
+</head>
+<body>
+<header class="top"><div class="shell bar">
+<a class="brand" href="#"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>ONLINE<span>CLUBING</span></a>
+<nav aria-label="Main"><a href="#city-rooms">City rooms</a><a href="#nationwide">Nationwide floor</a></nav>
+</div></header>
+<main class="shell">
+<section class="hero" aria-labelledby="headline">
+<div class="hero-copy">
+<h1 id="headline">Your city.<br><em>Your sound.</em></h1>
+<p>Live hip-hop and R&amp;B radio from across the U.S. Find your city’s sound or tune in with the whole country.</p>
+<div class="actions"><a class="button primary" href="#city-rooms">Explore city rooms <span class="chevron down" aria-hidden="true"></span></a><a class="button outline" href="#nationwide">Join the nationwide floor <span class="chevron" aria-hidden="true"></span></a></div>
+</div>
+</section>
+<section class="nation" id="nationwide" aria-labelledby="nation-title">
+<div><div class="label"><span class="dot"></span> NATIONWIDE FLOOR</div><h2 id="nation-title">Coast to Coast</h2><p>A different city takes the floor every hour. Share the room and tune into the same featured station.</p></div>
+<div class="now"><span class="label">FEATURED CITY</span><strong id="featured-city"></strong><span id="featured-station"></span><span id="next-up"></span></div>
+<button type="button" class="button primary" id="join-national"><span class="play-icon" aria-hidden="true"></span> Tune in</button>
+</section>
+<section class="deck" id="radio-deck" hidden aria-labelledby="deck-title">
+<div class="deck-head">
+<div><div class="label" id="deck-label">CITY ROOM</div><h2 id="deck-title" tabindex="-1"></h2><p id="deck-info"></p></div>
+<button id="close-player" class="button outline compact" type="button">Close player</button>
+</div>
+<div id="player"></div>
+<div class="actions">
+<a id="station-link" class="button outline compact" target="_blank" rel="noopener">Open station player <span class="chevron" aria-hidden="true"></span></a>
+<button id="share-room" class="button outline compact" type="button">Copy room link</button>
+<button id="save-room" class="button outline compact" type="button">Save city</button>
+</div>
+<p id="deck-feedback" class="feedback" role="status"></p>
+</section>
+<section class="rooms" id="city-rooms" aria-labelledby="rooms-title">
+<div class="rooms-head"><div><h2 id="rooms-title">City rooms</h2><p>Pick a city to hear its local station.</p></div>
+<label class="search"><span class="search-icon" aria-hidden="true"></span><input id="city-search" type="search" placeholder="Find a city or station" aria-label="Find a city or station"></label></div>
+<div class="filters" role="group" aria-label="Filter city rooms" id="filters"></div>
+<p class="results" id="results" aria-live="polite"></p>
+<div class="city-grid" id="city-grid"></div>
+</section>
+</main>
+<footer class="shell"><span>ONLINE CLUBING</span><p>Live audio comes from station providers. Programming and availability vary.</p></footer>
+</body>
+</html>
