@@ -7,13 +7,15 @@ const assetTypes = {
   'party.js': 'text/javascript; charset=utf-8',
   'club.css': 'text/css; charset=utf-8',
   'karafun-catalog.json.gz': 'application/gzip',
+  'karaoke-city-lights.mp3': 'audio/mpeg',
+  'karaoke-after-hours.mp3': 'audio/mpeg',
   'hero.webp': 'image/webp'
 };
 const root = new URL('../', import.meta.url);
 const assets = {};
 for (const [name, type] of Object.entries(assetTypes)) {
   const file = await readFile(new URL('dist/' + name, root));
-  assets[name] = [type, /\.(webp|gz)$/.test(name) ? file.toString('base64') : file.toString('utf8')];
+  assets[name] = [type, /\.(webp|gz|mp3)$/.test(name) ? file.toString('base64') : file.toString('utf8')];
 }
 
 const output = new URL('dist/server/', root);

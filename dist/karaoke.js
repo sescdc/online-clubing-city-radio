@@ -5,8 +5,8 @@
     ['snoop','Drop It Like It’s Hot','Snoop Dogg & Pharrell Williams','Hip-hop','Tml2Efv3lNM','West'],
     ['mix','Baby Got Back','Sir Mix-a-Lot','Hip-hop','_3LRjzgMxcw','West'],
     ['bruno','24K Magic','Bruno Mars','R&B / Funk','cxBm6oYTTr8','West'],
-    ['nelly','Ride Wit Me','Nelly','Hip-hop','wNYiYbNCW3Q','Midwest'],
-    ['hot','Hot in Herre','Nelly','Hip-hop','byYMGY8_0BQ','Midwest'],
+    ['nelly','Ride Wit Me','Nelly','Hip-hop','UMrg6lwMSl8','Midwest'],
+    ['hot','Hot in Herre','Nelly','Hip-hop','zgyzGPrpPjQ','Midwest'],
     ['em','Lose Yourself','Eminem','Hip-hop','pi-Odu9CDmw','Midwest'],
     ['tlc','No Scrubs','TLC','R&B','CUFIRtDz-Oo','South'],
     ['bey','Crazy in Love','Beyoncé & Jay-Z','R&B','Hm5OjVvLQKI','South'],
@@ -15,6 +15,37 @@
     ['alicia','No One','Alicia Keys','R&B','0lFbFPq8ajo','Northeast'],
     ['salt','Push It','Salt-N-Pepa','Hip-hop','a8JxaRlHm44','Northeast'],
   ].map(([id, title, artist, genre, video, region]) => ({id, title, artist, genre, video, region}));
+  const originals = [
+    {
+      id: 'city-lights', title: 'City Lights', artist: 'Online Clubing', genre: 'Hip-hop',
+      audio: 'karaoke-city-lights.mp3', bpm: 96,
+      lyrics: [
+        'Get ready…', 'I see the city lights', 'We’re coming out tonight',
+        'From the Bay to the East', 'Every block got a beat', 'Put your hands in the air',
+        'Send the rhythm everywhere', 'I see the city lights', 'We’re coming out tonight',
+        'Every voice in the room', 'Let me hear you sing it too', 'City lights, city lights'
+      ]
+    },
+    {
+      id: 'after-hours', title: 'After Hours', artist: 'Online Clubing', genre: 'R&B',
+      audio: 'karaoke-after-hours.mp3', bpm: 84,
+      lyrics: [
+        'Get ready…', 'When the streets slow down', 'I can hear that sound',
+        'Stay a little longer', 'Let the feeling grow', 'Underneath the moonlight',
+        'Take it nice and slow', 'After hours with you', 'There’s nowhere else to be',
+        'After hours with you', 'Keep a little time for me', 'After hours with you'
+      ]
+    }
+  ];
+  const catalogMatches = new Map([
+    ['13657','hammer'], ['35574','pac'], ['41103','snoop'], ['14483','mix'], ['51925','bruno'],
+    ['17214','nelly'], ['6863','hot'], ['8520','tlc'], ['5187','bey'], ['8908','dc'],
+    ['13212','alicia'], ['13912','salt']
+  ].map(([id, key]) => [id, catalog.find(song => song.id === key)]));
+  const directLinks = {
+    '17214': 'https://www.karafun.com/karaoke/nelly/ride-wit-me/',
+    '6863': 'https://www.karafun.com/karaoke/nelly/hot-in-herre/'
+  };
   const cityPicks = {
     bay:['hammer','pac'], la:['snoop','pac'], sea:['mix'], hnl:['bruno'],
     stl:['nelly','hot'], det:['em'], nyc:['alicia','salt'],
@@ -27,11 +58,17 @@
   let city = null;
   let room = null;
   let active = null;
+  let nativeAudio = null;
+  let videoPlayer = null;
+  let videoAPI = null;
+  let playbackToken = 0;
+  let playbackTimer;
+  const playbackStatus = el('karaoke-playback');
   const setlists = new Map();
   const pageSize = 30;
   const genre = el('karafun-genre');
   const more = el('karafun-more');
-  let source = 'city';
+  let source = 'originals';
   let karaFunSongs = null;
   let catalogRequest = null;
   let visibleCount = pageSize;
@@ -45,11 +82,11 @@
     const link = document.createElement('a');
     const url = new URL('https://www.karafun.com/search/');
     url.searchParams.set('query', song.title + ' ' + song.artist);
-    link.href = url.href;
+    link.href = directLinks[song.id] ?? url.href;
     link.target = '_blank';
     link.rel = 'noopener';
-    link.className = className;
-    link.textContent = 'Open';
+    link.className = className + ' karaoke-external';
+    link.textContent = 'KaraFun';
     link.setAttribute('aria-label', 'Find ' + song.title + ' by ' + song.artist + ' on KaraFun');
     return link;
   }
@@ -57,7 +94,8 @@
   function selectSource(nextSource) {
     source = nextSource;
     const isKaraFun = source === 'karafun';
-    el('karaoke-city-picks').setAttribute('aria-pressed', String(!isKaraFun));
+    el('karaoke-city-picks').setAttribute('aria-pressed', String(source === 'city'));
+    el('karaoke-originals').setAttribute('aria-pressed', String(source === 'originals'));
     el('karaoke-karafun').setAttribute('aria-pressed', String(isKaraFun));
     el('karafun-tools').hidden = !isKaraFun;
     el('karaoke-browse').hidden = !isKaraFun;
@@ -120,31 +158,136 @@
     songs.replaceChildren(...shown.map(song => {
       const row = document.createElement('div');
       row.className = 'karaoke-row';
-      row.append(trackDetails(song, song.artist), karaFunLink(song, 'button outline compact'), addToSetlist(song));
+      row.append(trackDetails(song, song.artist), startControl(song), addToSetlist(song));
       return row;
     }));
   }
 
   function stop() {
+    playbackToken += 1;
+    clearTimeout(playbackTimer);
     active = null;
+    if (nativeAudio) {
+      nativeAudio.pause();
+      nativeAudio.removeAttribute('src');
+      nativeAudio.load();
+      nativeAudio = null;
+    }
+    videoPlayer?.destroy();
+    videoPlayer = null;
     el('karaoke-video').replaceChildren();
     el('karaoke-stage').hidden = true;
+    playbackStatus.textContent = '';
+  }
+
+  function loadVideoAPI() {
+    if (window.YT?.Player) return Promise.resolve(window.YT);
+    if (!videoAPI) {
+      videoAPI = new Promise((resolve, reject) => {
+        window.onYouTubeIframeAPIReady = () => resolve(window.YT);
+        const script = document.createElement('script');
+        script.src = 'https://www.youtube.com/iframe_api';
+        script.onerror = reject;
+        document.head.append(script);
+      });
+    }
+    return videoAPI;
+  }
+
+  function playOriginal(song, token) {
+    const lyrics = document.createElement('div');
+    lyrics.className = 'karaoke-lyrics';
+    const audio = document.createElement('audio');
+    audio.className = 'karaoke-audio';
+    audio.controls = true;
+    audio.src = song.audio;
+    audio.setAttribute('aria-label', song.title + ' backing track');
+    nativeAudio = audio;
+    el('karaoke-video').append(lyrics, audio);
+    function showLine() {
+      const bar = Math.floor(audio.currentTime * song.bpm / 240);
+      lyrics.textContent = song.lyrics[Math.min(bar, song.lyrics.length - 1)];
+    }
+    showLine();
+    audio.addEventListener('timeupdate', showLine);
+    audio.addEventListener('playing', () => {
+      if (token === playbackToken) playbackStatus.textContent = 'Playing in this room.';
+    });
+    audio.addEventListener('pause', () => {
+      if (token === playbackToken && !audio.ended) playbackStatus.textContent = 'Track paused.';
+    });
+    audio.addEventListener('ended', () => {
+      if (token === playbackToken) playbackStatus.textContent = 'Track ended. Press Play to sing it again.';
+    });
+    audio.play().catch(() => {
+      if (token === playbackToken) playbackStatus.textContent = 'Tap Play on the audio controls to start.';
+    });
+  }
+
+  function playVideo(song, token) {
+    const frame = document.createElement('iframe');
+    const query = new URLSearchParams({
+      autoplay: '1', playsinline: '1', enablejsapi: '1', origin: location.origin
+    });
+    frame.title = song.title + ' karaoke backing track';
+    frame.src = 'https://www.youtube.com/embed/' + song.video + '?' + query;
+    frame.allow = 'autoplay; encrypted-media; picture-in-picture';
+    frame.allowFullscreen = true;
+    frame.referrerPolicy = 'strict-origin-when-cross-origin';
+    el('karaoke-video').append(frame);
+    function report(text) {
+      if (token !== playbackToken) return;
+      clearTimeout(playbackTimer);
+      playbackStatus.textContent = text;
+    }
+    playbackTimer = setTimeout(() => report('Tap Play on the video. If it is unavailable, use a playback link below or choose Club originals.'), 6500);
+    loadVideoAPI().then(api => {
+      if (token !== playbackToken) return;
+      videoPlayer = new api.Player(frame, {events: {
+        onStateChange(event) {
+          if (event.data === api.PlayerState.PLAYING) report('Playing in this room.');
+          if (event.data === api.PlayerState.ENDED) report('Track ended.');
+        },
+        onAutoplayBlocked() { report('Tap Play on the video to start the backing track.'); },
+        onError() { report('This video cannot play here. Use a playback link below or choose Club originals.'); }
+      }});
+    }).catch(() => report('Tap Play on the video or use a playback link below.'));
   }
 
   function play(song) {
+    const backing = song.karaFun ? catalogMatches.get(song.id) : song;
+    if (!backing) return;
+    stop();
     active = song;
+    const token = playbackToken;
+    const provider = song.karaFun ? song : [...catalogMatches].find(([, match]) => match === song);
+    const providerSong = Array.isArray(provider) ? {...song, id: provider[0]} : provider;
+    const watchLink = el('karaoke-watch');
+    const providerLink = el('karaoke-provider');
+    watchLink.hidden = !backing.video;
+    providerLink.hidden = !providerSong;
+    if (backing.video) watchLink.href = 'https://www.youtube.com/watch?v=' + backing.video;
+    if (providerSong) providerLink.href = karaFunLink(providerSong, '').href;
     el('karaoke-track').textContent = song.title + ' · ' + song.artist;
-    el('karaoke-watch').href = 'https://www.youtube.com/watch?v=' + song.video;
-    const player = document.createElement('iframe');
-    player.title = song.title + ' karaoke backing track';
-    player.src = 'https://www.youtube.com/embed/' + song.video + '?autoplay=1&playsinline=1';
-    player.allow = 'autoplay; encrypted-media; picture-in-picture';
-    player.allowFullscreen = true;
-    player.referrerPolicy = 'strict-origin-when-cross-origin';
-    el('karaoke-video').replaceChildren(player);
     el('karaoke-stage').hidden = false;
-    el('karaoke-status').textContent = 'Selected ' + song.title + '.';
+    playbackStatus.textContent = 'Loading backing track…';
+    if (backing.audio) playOriginal(backing, token);
+    else playVideo(backing, token);
     renderSongs();
+    el('karaoke-stage').scrollIntoView({block: 'nearest'});
+    el('karaoke-stop').focus({preventScroll: true});
+  }
+
+  function startControl(song) {
+    if (song.karaFun && !catalogMatches.has(song.id)) return karaFunLink(song, 'button outline compact');
+    const label = song.audio ? 'Play' : 'Try here';
+    const start = button(label, 'Play ' + song.title + ' in the room', () => play(song));
+    start.setAttribute('aria-pressed', String(song === active));
+    if (!song.karaFun) return start;
+    const actions = document.createElement('div');
+    actions.className = 'karaoke-track-actions';
+    actions.append(start, karaFunLink(song, 'button outline compact'));
+    return actions;
   }
 
   function button(text, label, action) {
@@ -175,23 +318,18 @@
     const term = input.value.trim().toLowerCase();
     const picks = cityPicks[city.id] ?? [];
     const rank = song => picks.includes(song.id) ? picks.indexOf(song.id) : song.region === city.region ? 10 : 20;
-    const results = catalog.filter(song => [song.title, song.artist, song.genre].join(' ').toLowerCase().includes(term))
+    const results = (source === 'originals' ? originals : catalog).filter(song => [song.title, song.artist, song.genre].join(' ').toLowerCase().includes(term))
       .sort((a, b) => rank(a) - rank(b));
     const rows = results.map(song => {
       const row = document.createElement('div');
       row.className = 'karaoke-row';
       const info = trackDetails(song, song.artist + ' · ' + song.genre);
-      const start = button('Play', 'Play ' + song.title, () => {
-        play(song);
-        el('karaoke-stop').focus({preventScroll:true});
-      });
-      start.setAttribute('aria-pressed', String(song === active));
-      row.append(info, start, addToSetlist(song));
+      row.append(info, startControl(song), addToSetlist(song));
       return row;
     });
     if (!rows.length) {
       const empty = document.createElement('p');
-      empty.textContent = 'No matches in City picks. Try the KaraFun catalog.';
+      empty.textContent = 'No matches here. Try the KaraFun catalog.';
       rows.push(empty);
     }
     songs.replaceChildren(...rows);
@@ -204,8 +342,7 @@
       const item = document.createElement('li');
       const row = document.createElement('div');
       row.className = 'karaoke-row';
-      const start = song.karaFun ? karaFunLink(song, 'button outline compact')
-        : button('Play', 'Play queued ' + song.title, () => play(song));
+      const start = startControl(song);
       row.append(trackDetails(song, song.artist), start,
         button('Remove', 'Remove ' + song.title + ' from my setlist', () => {
           list.splice(index, 1);
@@ -235,6 +372,9 @@
   el('karaoke-city-picks').addEventListener('click', () => {
     if (source !== 'city') selectSource('city');
   });
+  el('karaoke-originals').addEventListener('click', () => {
+    if (source !== 'originals') selectSource('originals');
+  });
   el('karaoke-karafun').addEventListener('click', () => {
     if (source !== 'karafun') selectSource('karafun');
     else if (!karaFunSongs && !catalogRequest) loadKaraFun();
@@ -254,7 +394,7 @@
       el('karaoke-city').textContent = title;
       genre.value = 'all';
       el('karaoke-status').textContent = '';
-      selectSource('city');
+      selectSource('originals');
       renderQueue();
     },
     stop

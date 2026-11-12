@@ -89,11 +89,31 @@ export default {
     if (!Object.hasOwn(assets, key)) return new Response('Not found', {status: 404});
     if (!['GET', 'HEAD'].includes(request.method)) return new Response(null, {status: 405});
     const [type, content] = assets[key];
-    const compressed = key.endsWith('.gz');
-    const data = compressed || key.endsWith('.webp') ? Uint8Array.from(atob(content), byte => byte.charCodeAt(0)) : content;
-    return new Response(request.method === 'HEAD' ? null : data, {headers: {
+    const isAudio = type === 'audio/mpeg';
+    const data = /\.(webp|gz|mp3)$/.test(key) ? Uint8Array.from(atob(content), byte => byte.charCodeAt(0)) : content;
+    const responseHeaders = {
       'Content-Type': type,
-      'Cache-Control': key.endsWith('.webp') ? 'public, max-age=86400' : 'no-cache'
-    }});
+      'Cache-Control': key.endsWith('.webp') || isAudio ? 'public, max-age=86400' : 'no-cache'
+    };
+    if (isAudio) {
+      responseHeaders['Accept-Ranges'] = 'bytes';
+      const range = request.headers.get('Range');
+      if (range && request.method === 'GET') {
+        const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+        const size = data.length;
+        const start = match?.[1] ? Number(match[1]) : Math.max(0, size - Number(match?.[2]));
+        const end = match?.[1] && match[2] ? Math.min(size - 1, Number(match[2])) : size - 1;
+        if (!match || start > end || start >= size) {
+          return new Response(null, {status: 416, headers: {...responseHeaders, 'Content-Range': 'bytes */' + size}});
+        }
+        return new Response(data.subarray(start, end + 1), {status: 206, headers: {
+          ...responseHeaders,
+          'Content-Range': 'bytes ' + start + '-' + end + '/' + size,
+          'Content-Length': String(end - start + 1)
+        }});
+      }
+      responseHeaders['Content-Length'] = String(data.length);
+    }
+    return new Response(request.method === 'HEAD' ? null : data, {headers: responseHeaders});
   }
 };

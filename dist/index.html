@@ -76,14 +76,17 @@
 </div>
 <section id="karaoke-panel" class="karaoke" aria-labelledby="karaoke-title" hidden>
 <div class="karaoke-heading"><div class="label" id="karaoke-city"></div><h3 id="karaoke-title">Karaoke stage</h3>
-<p>Pick a backing track and use your party mic to sing. Playback is controlled on your device.</p></div>
+<p>Choose a track to sing over with your party mic. Use headphones to reduce echo.</p></div>
 <div id="karaoke-stage" class="karaoke-stage" hidden>
 <div class="karaoke-now"><strong id="karaoke-track"></strong><button id="karaoke-stop" class="button outline compact" type="button">Stop</button></div>
 <div id="karaoke-video"></div>
-<a id="karaoke-watch" target="_blank" rel="noopener" class="catalog-link">Watch on YouTube</a>
+<p id="karaoke-playback" class="karaoke-playback" role="status"></p>
+<a id="karaoke-watch" target="_blank" rel="noopener" class="catalog-link" hidden>Watch on YouTube</a>
+<a id="karaoke-provider" target="_blank" rel="noopener" class="catalog-link" hidden>Open on KaraFun</a>
 </div>
 <div class="music-switch karaoke-sources" role="group" aria-label="Karaoke song source">
-<button id="karaoke-city-picks" class="button outline compact" type="button" aria-pressed="true">City picks</button>
+<button id="karaoke-city-picks" class="button outline compact" type="button" aria-pressed="false">City picks</button>
+<button id="karaoke-originals" class="button outline compact" type="button" aria-pressed="true">Club originals</button>
 <button id="karaoke-karafun" class="button outline compact" type="button" aria-pressed="false">KaraFun catalog</button>
 </div>
 <label class="search karaoke-search"><span class="search-icon" aria-hidden="true"></span><input id="karaoke-search" type="search" placeholder="Find a song or artist" aria-label="Find a song or artist"></label>
