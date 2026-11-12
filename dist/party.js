@@ -96,7 +96,30 @@
     return peer;
   }
 
+  function micLocked(session) {
+    return Boolean(session.singer && session.singer !== session.id);
+  }
+
+  function applySinger(session, singer, time) {
+    if (time < (session.singerTime ?? 0)) return;
+    session.singerTime = time;
+    if (session.singer === singer) return;
+    session.singer = singer;
+    if (micLocked(session) && session.tracks.audio) {
+      session.tracks.audio.stop();
+      session.tracks.audio = null;
+      for (const peer of session.peers.values()) {
+        void peer.senders.audio?.replaceTrack(null).catch(() => {});
+      }
+    }
+    for (const peer of session.peers.values()) updatePeer(peer);
+    updateControls(session);
+  }
+
   function updatePeer(peer) {
+    const singer = active?.singer;
+    peer.view.video.muted = Boolean(singer && singer !== peer.member.id);
+    peer.view.card.classList.toggle('party-singing', singer === peer.member.id);
     updateTile(peer.view, peer.member, false);
     const state = peer.pc.connectionState;
     if (state !== 'connected') {
@@ -145,6 +168,7 @@
       if (active !== session) return;
       if (session.retrying) status.textContent = '';
       session.retrying = false;
+      applySinger(session, data.singer ?? null, data.now ?? 0);
       session.outgoing.splice(0, outgoing.length);
       count.textContent = data.members.length + (data.members.length === 1 ? ' guest' : ' guests');
       const members = new Set(data.members.map(member => member.id));
@@ -210,6 +234,9 @@
       button.setAttribute('aria-pressed', String(on));
       button.textContent = labels[kind] + (on ? ' on' : ' off');
     }
+    kinds.audio.disabled = micLocked(session);
+    if (micLocked(session)) kinds.audio.textContent = 'Mic locked for singer';
+    session.view.card.classList.toggle('party-singing', session.singer === session.id);
     updateTile(session.view, {name: session.name, camera: session.tracks.video, mic: session.tracks.audio}, true);
   }
 
@@ -239,6 +266,8 @@
       const view = tile({name: displayName}, true);
       const session = {...ticket, room: selected, name: displayName, view, tracks: {}, peers: new Map(), outgoing: [], cursor: 0};
       active = session;
+      const singerName = element('singer-name');
+      if (!singerName.value) singerName.value = displayName;
       form.hidden = true;
       grid.hidden = controls.hidden = count.hidden = false;
       count.textContent = '1 guest';
@@ -256,7 +285,7 @@
   for (const [kind, button] of Object.entries(kinds)) {
     button.addEventListener('click', async () => {
       const session = active;
-      if (!session) return;
+      if (!session || (kind === 'audio' && micLocked(session))) return;
       button.disabled = true;
       try {
         const previous = session.tracks[kind];
@@ -266,7 +295,7 @@
           const constraints = kind === 'video' ? {video: {width: {ideal: 640}, height: {ideal: 360}, frameRate: {ideal: 24}}} : {audio: true};
           const stream = await navigator.mediaDevices.getUserMedia(constraints);
           track = stream.getTracks()[0];
-          if (active !== session) {
+          if (active !== session || (kind === 'audio' && micLocked(session))) {
             track.stop();
             return;
           }
@@ -285,7 +314,7 @@
       } catch {
         if (active === session) status.textContent = 'Could not access your ' + labels[kind].toLowerCase() + '. Check your browser permissions.';
       } finally {
-        button.disabled = false;
+        button.disabled = kind === 'audio' && active === session && micLocked(session);
       }
     });
   }
@@ -301,6 +330,10 @@
   });
   window.addEventListener('pagehide', () => leave());
   window.clubParty = {
+    identity() { return active ? identity(active) : null; },
+    singer(nextRoom, id, time) {
+      if (active?.room === nextRoom) applySinger(active, id, time);
+    },
     select(next) {
       if (next === room) return;
       leave();

@@ -100,3 +100,31 @@ footer{display:flex;justify-content:space-between;gap:16px;border-top:1px solid 
 .karaoke-copy-field{width:100%;min-height:40px;padding:6px 8px;margin-top:8px;background:#15151b;color:var(--ink);border:1px solid var(--line);border-radius:6px;font:inherit;font-size:16px}
 .karaoke-copy-actions{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-top:7px}
 .karaoke-copy-actions .catalog-link{margin-top:0}
+.karaoke-mode .room-layout{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
+.stage-screen,.singer-signup{margin-top:14px;border:1px solid var(--line);border-radius:12px;padding:12px}
+.stage-screen-header{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.stage-screen h4,.singer-signup h4{margin:0;font-size:15px}
+.stage-display{display:grid;align-content:center;min-height:190px;text-align:center;padding:16px 12px;margin:10px 0;background:radial-gradient(ellipse at 50% 0%,#2d3721,#111314 70%);border:1px solid #404a31;border-radius:9px}
+.stage-display #stage-lyric{color:var(--acid);font-size:clamp(23px,3vw,40px);font-weight:800;line-height:1.15;margin:12px 0;overflow-wrap:anywhere}
+.stage-display #stage-performer{font-weight:700;color:var(--ink);overflow-wrap:anywhere}
+.stage-display #stage-next-line{min-height:1.4em}
+.stage-audio-controls{display:flex;align-items:center;flex-wrap:wrap;gap:9px}
+.stage-audio-controls .button:disabled{opacity:.55;cursor:default}
+.singer-signup form{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:8px;margin:10px 0}
+.singer-signup form input,.singer-signup form select{width:100%;min-height:44px;padding:8px;border-radius:6px;border:1px solid var(--line);background:#15151b;color:var(--ink);font:inherit;font-size:16px}
+.singer-signup form button{grid-column:1/-1;justify-self:start}
+.singer-signup #singer-turn{margin-bottom:10px}
+.singer-signup ol{margin:6px 0 0;padding-left:24px}
+.singer-signup li{padding:5px 0;color:var(--ink);overflow-wrap:anywhere}
+.singer-signup li.is-live{color:var(--acid)}
+.karaoke-solo{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
+.karaoke-solo summary{cursor:pointer;font-size:14px;font-weight:700}
+.stage-popout-view{padding:22px 0}
+.stage-popout-view h1{font:800 clamp(25px,5vw,54px)/1.1 var(--display);margin:16px 0 0}
+.stage-popout-view .stage-display{min-height:58vh}
+.stage-popout-view .stage-display #stage-lyric{font-size:clamp(27px,6vw,85px)}
+.stage-popout-view .stage-display p{color:var(--muted);font-size:clamp(15px,2vw,24px)}
+.stage-view-only>header,.stage-view-only>main,.stage-view-only>footer{display:none}
+@media(max-width:700px){.karaoke-mode .room-layout{grid-template-columns:minmax(0,1fr)}}
+.party-tile.party-singing{outline:2px solid var(--acid);outline-offset:-2px}
+#party-mic:disabled{opacity:.62;cursor:default}

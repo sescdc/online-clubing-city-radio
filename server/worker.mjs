@@ -51,11 +51,14 @@ async function handleParty(request, env, path) {
     .bind(room, id, token, cutoff).first();
   if (!member) return reply({error: 'Your connection expired. Rejoin the room.'}, 401);
 
+  const turn = await db.prepare('SELECT performer_id FROM karaoke_turns WHERE room = ? AND ends_at > ?')
+    .bind(room, now).first();
+  const singer = turn?.performer_id ?? null;
   const outgoing = Array.isArray(body.outgoing) ? body.outgoing : [];
   if (outgoing.length > 30) return reply({error: 'Too many connection messages.'}, 400);
   const statements = [
     db.prepare('UPDATE party_members SET seen = ?, camera = ?, mic = ? WHERE id = ?')
-      .bind(now, Number(body.camera === true), Number(body.mic === true), id)
+      .bind(now, Number(body.camera === true), Number(body.mic === true && (!singer || singer === id)), id)
   ];
   for (const message of outgoing) {
     if (!message || !uuidPattern.test(message.target) || !uuidPattern.test(message.nonce) || message.target === id) continue;
@@ -72,12 +75,95 @@ async function handleParty(request, env, path) {
     db.prepare('SELECT id, sender, payload FROM party_signals WHERE target = ? AND id > ? ORDER BY id LIMIT 100').bind(id, cursor)
   );
   const results = await db.batch(statements);
-  return reply({members: results.at(-2).results, messages: results.at(-1).results});
+  return reply({members: results.at(-2).results, messages: results.at(-1).results, singer, now});
+}
+
+const trackDuration = Object.freeze({'city-lights': 30_750, 'after-hours': 35_030});
+const queueLifetime = 2 * 60 * 60 * 1000;
+
+async function handleKaraoke(request, env) {
+  if (!env.DB) return reply({error: 'The singer list is temporarily unavailable.'}, 503);
+  const url = new URL(request.url);
+  const room = url.searchParams.get('room');
+  if (!room || !roomPattern.test(room)) return reply({error: 'Unknown room.'}, 404);
+  const db = env.DB.withSession?.('first-primary') ?? env.DB;
+  const now = Date.now();
+  const cutoff = now - queueLifetime;
+  if (request.method === 'POST') {
+    if (request.headers.get('Origin') !== url.origin) return reply({error: 'Open this room from Online Clubing.'}, 403);
+    const raw = await request.text();
+    if (raw.length > 1000) return reply({error: 'Request is too large.'}, 413);
+    let input;
+    try { input = JSON.parse(raw); } catch { return reply({error: 'Invalid request.'}, 400); }
+    if (!input || typeof input.key !== 'string' || !uuidPattern.test(input.key)) return reply({error: 'Refresh the room and try again.'}, 400);
+    if (input.action === 'join') {
+      const singer = typeof input.name === 'string' ? input.name.trim().replace(/\s+/g, ' ') : '';
+      if (!singer || singer.length > 32 || !Object.hasOwn(trackDuration, input.track)) {
+        return reply({error: 'Enter a singer name and pick a stage song.'}, 400);
+      }
+      const results = await db.batch([
+        db.prepare(`DELETE FROM karaoke_turns WHERE room = ?
+          AND (ends_at <= ? OR (started_at IS NULL AND created_at < ?))`).bind(room, now, cutoff),
+        db.prepare(`INSERT OR IGNORE INTO karaoke_turns (room, singer_key, singer, track, created_at)
+          SELECT ?, ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM karaoke_turns WHERE room = ?) < 30`)
+          .bind(room, input.key, singer, input.track, now, room),
+        db.prepare('SELECT id FROM karaoke_turns WHERE room = ? AND singer_key = ?').bind(room, input.key)
+      ]);
+      const own = results[2].results[0];
+      if (!own) return reply({error: 'The singer list is full. Try again after a turn ends.'}, 409);
+      return reply({id: own.id});
+    }
+    if (!Number.isSafeInteger(input.id) || input.id < 1) return reply({error: 'Choose a valid turn.'}, 400);
+    if (input.action === 'leave') {
+      const result = await db.prepare('DELETE FROM karaoke_turns WHERE room = ? AND id = ? AND singer_key = ?')
+        .bind(room, input.id, input.key).run();
+      if (!result.meta.changes) return reply({error: 'This turn is no longer on your list.'}, 409);
+      return reply({ok: true});
+    }
+    if (input.action === 'start') {
+      const party = input.party;
+      if (!party || typeof party.id !== 'string' || typeof party.token !== 'string'
+        || !uuidPattern.test(party.id) || !uuidPattern.test(party.token)) {
+        return reply({error: 'Join the singer screen before starting your song.'}, 409);
+      }
+      const performer = await db.prepare('SELECT id FROM party_members WHERE room = ? AND id = ? AND token = ? AND seen >= ?')
+        .bind(room, party.id, party.token, now - presenceWindow).first();
+      if (!performer) return reply({error: 'Rejoin the singer screen before starting your song.'}, 409);
+      const own = await db.prepare('SELECT track FROM karaoke_turns WHERE room = ? AND id = ? AND singer_key = ? AND started_at IS NULL')
+        .bind(room, input.id, input.key).first();
+      const duration = own && trackDuration[own.track];
+      if (!duration) return reply({error: 'Your turn is unavailable. Sign up again if it expired.'}, 409);
+      const result = await db.prepare(`UPDATE karaoke_turns SET started_at = ?, ends_at = ?, performer_id = ?
+        WHERE room = ? AND id = ? AND singer_key = ? AND started_at IS NULL
+          AND id = (SELECT MIN(id) FROM karaoke_turns WHERE room = ? AND started_at IS NULL AND created_at >= ?)
+          AND NOT EXISTS (SELECT 1 FROM karaoke_turns WHERE room = ? AND ends_at > ?)`)
+        .bind(now, now + duration, performer.id, room, input.id, input.key, room, cutoff, room, now).run();
+      if (!result.meta.changes) return reply({error: 'Wait until the singer list shows you are up next.'}, 409);
+    } else {
+      return reply({error: 'Unknown karaoke action.'}, 400);
+    }
+  } else if (request.method !== 'GET') {
+    return reply({error: 'Method unavailable.'}, 405);
+  }
+
+  const stateTime = Date.now();
+  const {results} = await db.prepare(`SELECT id, singer, track, started_at, ends_at, performer_id
+    FROM karaoke_turns WHERE room = ?
+      AND ((started_at IS NULL AND created_at >= ?) OR ends_at > ?)
+    ORDER BY started_at IS NULL, id LIMIT 30`).bind(room, stateTime - queueLifetime, stateTime).all();
+  return reply({now: stateTime, turns: results});
 }
 
 export default {
   async fetch(request, env) {
     const path = new URL(request.url).pathname;
+    if (path === '/api/karaoke') {
+      try { return await handleKaraoke(request, env); }
+      catch (error) {
+        console.error('Karaoke request failed', error.message);
+        return reply({error: 'The karaoke stage is temporarily unavailable.'}, 503);
+      }
+    }
     if (['/api/party/join', '/api/party/sync', '/api/party/leave'].includes(path)) {
       try { return await handleParty(request, env, path); }
       catch (error) {

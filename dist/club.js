@@ -259,12 +259,22 @@ function setMusicMode(mode, startOnTap = false) {
   byId('mode-karaoke').setAttribute('aria-pressed', String(!radio));
   byId('radio-panel').hidden = !radio;
   byId('karaoke-panel').hidden = radio;
+  deck.classList.toggle('karaoke-mode', !radio);
+  byId('party-screen-title').textContent = radio ? 'Video party' : 'Singer screen';
+  byId('party-join-button').textContent = radio ? 'Join video' : 'Join singer screen';
+  const roomURL = new URL(location.href);
+  if (radio) roomURL.searchParams.delete('mode');
+  else roomURL.searchParams.set('mode', 'karaoke');
+  history.replaceState(null, '', roomURL);
   if (radio) {
     window.clubKaraoke.stop();
+    window.clubStage.close();
     showRadio(current.station, startOnTap);
   } else {
     stopRadio();
-    window.clubKaraoke.open(current.station, current.room, byId('deck-title').textContent);
+    const title = byId('deck-title').textContent;
+    window.clubKaraoke.open(current.station, current.room, title);
+    window.clubStage.open(current.room, title);
   }
 }
 
@@ -320,6 +330,10 @@ byId('close-player').addEventListener('click', () => {
   deck.hidden = true;
   stopRadio();
   window.clubKaraoke.stop();
+  window.clubStage.close();
+  const closeURL = new URL(location.href);
+  closeURL.searchParams.delete('mode');
+  history.replaceState(null, '', closeURL);
   current = null;
   setRoomURL(null);
   for (const button of grid.querySelectorAll('[aria-current=true]')) button.setAttribute('aria-current','false');
@@ -353,9 +367,11 @@ byId('share-room').addEventListener('click', async () => {
 renderRooms();
 updateNation();
 setInterval(updateNation, 5000);
-const room = new URL(location.href).searchParams.get('room');
+const roomParams = new URL(location.href).searchParams;
+const room = roomParams.get('room');
 const requestedStation = stations.find(station => station.id === room);
 if (room === 'bay-stl') openRoom(bay, false, null, true);
 else if (room === 'nationwide') openRoom(relayAt(slotAt(Date.now())), true);
 else if (requestedStation) openRoom(requestedStation, false);
+if (current && roomParams.get('mode') === 'karaoke') setMusicMode('karaoke');
 if (current && location.hash === '#radio-deck') deck.scrollIntoView({block:'start'});

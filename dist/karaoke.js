@@ -273,6 +273,7 @@
   }
 
   function showStage(song, closeLabel = 'Stop') {
+    window.clubStage?.mute();
     stop();
     active = song;
     const watchLink = el('karaoke-watch');
@@ -460,6 +461,7 @@
   });
 
   window.clubKaraoke = {
+    originals,
     open(station, key, title) {
       stop();
       city = station;
@@ -469,6 +471,7 @@
       genre.value = 'all';
       el('karaoke-status').textContent = '';
       selectSource('originals');
+      el('karaoke-solo').open = false;
       renderQueue();
     },
     stop

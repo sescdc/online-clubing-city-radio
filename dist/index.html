@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="club.css">
 <script src="party.js" defer></script>
 <script src="karaoke.js" defer></script>
+<script src="stage.js" defer></script>
 <script src="club.js" defer></script>
 </head>
 <body>
@@ -40,13 +41,13 @@
 </div>
 <div class="room-layout">
 <section class="party" aria-label="Video party">
-<div class="party-header"><strong>Video party</strong><span id="party-count" hidden></span></div>
+<div class="party-header"><strong id="party-screen-title">Video party</strong><span id="party-count" hidden></span></div>
 <form id="party-join" class="party-lobby">
   <div class="lobby-mark" aria-hidden="true">▶</div>
   <h3>Ready to join?</h3>
   <p>Your camera and mic start off.</p>
   <label for="party-name">Display name</label>
-  <div class="party-entry"><input id="party-name" autocomplete="nickname" maxlength="32" required><button class="button primary">Join video</button></div>
+  <div class="party-entry"><input id="party-name" autocomplete="nickname" maxlength="32" required><button id="party-join-button" class="button primary">Join video</button></div>
 </form>
 <div id="party-grid" class="party-grid" hidden></div>
 <div id="party-controls" class="party-controls" hidden>
@@ -76,7 +77,37 @@
 </div>
 <section id="karaoke-panel" class="karaoke" aria-labelledby="karaoke-title" hidden>
 <div class="karaoke-heading"><div class="label" id="karaoke-city"></div><h3 id="karaoke-title">Karaoke stage</h3>
-<p>Tap a song title to get started. Use headphones to reduce echo.</p></div>
+<p>Sign up for a turn, then start your song when you’re next.</p></div>
+<div id="stage-screen" class="stage-screen">
+  <div class="stage-screen-header"><h4>Lyrics screen</h4><a id="stage-popout" class="button outline compact" target="_blank" rel="noopener">Open separate screen</a></div>
+  <div id="stage-display" class="stage-display">
+    <p id="stage-performer"></p>
+    <p id="stage-lyric">Waiting for a singer</p>
+    <p id="stage-next-line"></p>
+  </div>
+  <div class="stage-audio-controls">
+    <button id="stage-sound" class="button primary compact" type="button" disabled>Enable sound</button>
+    <audio id="stage-audio" preload="auto"></audio>
+    <p id="stage-audio-status" role="status"></p>
+  </div>
+</div>
+<div id="singer-signup" class="singer-signup">
+  <h4>Singer sign-up</h4>
+  <form id="singer-form">
+    <label for="singer-name">Singer name</label><input id="singer-name" name="name" maxlength="32" autocomplete="nickname" required>
+    <label for="singer-song">Song</label><select id="singer-song" name="song" required></select>
+    <button id="singer-submit" class="button primary" type="submit">Join singer list</button>
+  </form>
+  <p id="singer-status" class="feedback" role="status"></p>
+  <div id="singer-turn" class="actions" hidden>
+    <button id="singer-start" class="button primary compact" type="button" hidden>Start my song</button>
+    <button id="singer-leave" class="button outline compact" type="button">Leave list</button>
+  </div>
+  <h4>Singer list</h4><p id="singer-empty">Nobody has signed up yet.</p><ol id="singer-list"></ol>
+</div>
+<details class="karaoke-solo" id="karaoke-solo">
+<summary>Solo practice and KaraFun catalog</summary>
+<p>Shared turns use Club originals. KaraFun songs open through KaraFun.</p>
 <div id="karaoke-stage" class="karaoke-stage" hidden>
 <div class="karaoke-now"><strong id="karaoke-track"></strong><button id="karaoke-stop" class="button outline compact" type="button">Stop</button></div>
 <div id="karaoke-video"></div>
@@ -100,6 +131,7 @@
 <a id="karaoke-browse" class="catalog-link" href="https://www.karafun.com/karaoke/" target="_blank" rel="noopener" hidden>Open catalog on KaraFun</a>
 <div class="karaoke-queue"><h4>My setlist</h4><p id="karaoke-empty">Add songs to plan your turn.</p><ol id="karaoke-queue"></ol></div>
 <p class="feedback" id="karaoke-status" role="status"></p>
+</details>
 </section>
 <div class="actions room-actions">
 <button id="share-room" class="button outline compact" type="button">Copy room link</button>
@@ -117,6 +149,10 @@
 <div class="city-grid" id="city-grid"></div>
 </section>
 </main>
+<section id="stage-popout-view" class="shell stage-popout-view" hidden>
+  <a id="stage-back" class="button outline compact">Back to singer screen</a>
+  <h1 id="stage-room-name">Online Clubing</h1>
+</section>
 <footer class="shell"><span>ONLINE CLUBING</span><p>Live audio comes from station providers. Programming and availability vary.</p></footer>
 </body>
 </html>
