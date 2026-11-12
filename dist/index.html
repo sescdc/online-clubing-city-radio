@@ -82,9 +82,19 @@
 <div id="karaoke-video"></div>
 <a id="karaoke-watch" target="_blank" rel="noopener" class="catalog-link">Watch on YouTube</a>
 </div>
+<div class="music-switch karaoke-sources" role="group" aria-label="Karaoke song source">
+<button id="karaoke-city-picks" class="button outline compact" type="button" aria-pressed="true">City picks</button>
+<button id="karaoke-karafun" class="button outline compact" type="button" aria-pressed="false">KaraFun catalog</button>
+</div>
 <label class="search karaoke-search"><span class="search-icon" aria-hidden="true"></span><input id="karaoke-search" type="search" placeholder="Find a song or artist" aria-label="Find a song or artist"></label>
+<div id="karafun-tools" class="karafun-tools" hidden>
+<label for="karafun-genre">Genre</label>
+<select id="karafun-genre"><option value="all">All genres</option><option value="urban">Hip-hop &amp; R&amp;B</option><option value="duet">Duets</option></select>
+<p id="karafun-results" role="status"></p>
+</div>
 <div id="karaoke-songs" class="karaoke-list"></div>
-<a id="karaoke-browse" class="catalog-link" href="https://www.karafun.com/karaoke/" target="_blank" rel="noopener">Browse the KaraFun catalog</a>
+<button id="karafun-more" class="button outline compact" type="button" hidden>Show more songs</button>
+<a id="karaoke-browse" class="catalog-link" href="https://www.karafun.com/karaoke/" target="_blank" rel="noopener" hidden>Open catalog on KaraFun</a>
 <div class="karaoke-queue"><h4>My setlist</h4><p id="karaoke-empty">Add songs to plan your turn.</p><ol id="karaoke-queue"></ol></div>
 <p class="feedback" id="karaoke-status" role="status"></p>
 </section>

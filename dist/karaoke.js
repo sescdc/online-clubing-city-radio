@@ -28,6 +28,102 @@
   let room = null;
   let active = null;
   const setlists = new Map();
+  const pageSize = 30;
+  const genre = el('karafun-genre');
+  const more = el('karafun-more');
+  let source = 'city';
+  let karaFunSongs = null;
+  let catalogRequest = null;
+  let visibleCount = pageSize;
+
+  function normalize(text) {
+    return text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  }
+
+  function karaFunLink(song, className) {
+    const link = document.createElement('a');
+    const url = new URL('https://www.karafun.com/search/');
+    url.searchParams.set('query', song.title + ' ' + song.artist);
+    link.href = url.href;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.className = className;
+    link.textContent = 'Open';
+    link.setAttribute('aria-label', 'Find ' + song.title + ' by ' + song.artist + ' on KaraFun');
+    return link;
+  }
+
+  function selectSource(nextSource) {
+    source = nextSource;
+    const isKaraFun = source === 'karafun';
+    el('karaoke-city-picks').setAttribute('aria-pressed', String(!isKaraFun));
+    el('karaoke-karafun').setAttribute('aria-pressed', String(isKaraFun));
+    el('karafun-tools').hidden = !isKaraFun;
+    el('karaoke-browse').hidden = !isKaraFun;
+    more.hidden = true;
+    input.value = '';
+    visibleCount = pageSize;
+    renderSongs();
+    if (isKaraFun && !karaFunSongs && !catalogRequest) loadKaraFun();
+  }
+
+  async function loadKaraFun() {
+    const status = el('karafun-results');
+    status.textContent = 'Loading the KaraFun catalog…';
+    catalogRequest = fetch('karafun-catalog.json.gz');
+    try {
+      const response = await catalogRequest;
+      if (!response.ok) throw new Error('Catalog unavailable');
+      const json = await new Response(response.body.pipeThrough(new DecompressionStream('gzip'))).json();
+      karaFunSongs = json.map(([id, title, artist, styles, duet]) => ({
+        id, title, artist, styles, duet, karaFun: true,
+        search: normalize(title + ' ' + artist),
+        urban: /(?:^|,)(?:Hip-Hop|Rap|R&B|Soul)(?:,|$)/.test(styles)
+      }));
+      if (source === 'karafun') renderSongs();
+    } catch {
+      if (source === 'karafun') status.textContent = 'Catalog unavailable. Try again or open KaraFun below.';
+    } finally {
+      catalogRequest = null;
+    }
+  }
+
+  function addToSetlist(song) {
+    const list = setlists.get(room);
+    const alreadyAdded = list.includes(song);
+    const add = button(alreadyAdded ? 'Added' : 'Add', 'Add ' + song.title + ' to my setlist', () => {
+      list.push(song);
+      el('karaoke-status').textContent = song.title + ' added to your setlist.';
+      add.textContent = 'Added';
+      add.disabled = true;
+      renderQueue();
+    });
+    add.disabled = alreadyAdded;
+    return add;
+  }
+
+  function renderKaraFun() {
+    if (!karaFunSongs) {
+      songs.replaceChildren();
+      return;
+    }
+    const terms = normalize(input.value).split(' ').filter(Boolean);
+    const filter = genre.value;
+    const results = karaFunSongs.filter(song => (filter !== 'urban' || song.urban)
+      && (filter !== 'duet' || song.duet) && terms.every(term => song.search.includes(term)));
+    const shown = results.slice(0, visibleCount);
+    el('karafun-results').textContent = results.length
+      ? 'Showing ' + shown.length + ' of ' + results.length.toLocaleString() + ' songs'
+      : 'No songs match your search.';
+    more.hidden = shown.length >= results.length;
+    songs.replaceChildren(...shown.map(song => {
+      const row = document.createElement('div');
+      row.className = 'karaoke-row';
+      row.append(trackDetails(song, song.artist), karaFunLink(song, 'button outline compact'), addToSetlist(song));
+      return row;
+    }));
+  }
 
   function stop() {
     active = null;
@@ -72,12 +168,15 @@
   }
 
   function renderSongs() {
+    if (source === 'karafun') {
+      renderKaraFun();
+      return;
+    }
     const term = input.value.trim().toLowerCase();
     const picks = cityPicks[city.id] ?? [];
     const rank = song => picks.includes(song.id) ? picks.indexOf(song.id) : song.region === city.region ? 10 : 20;
     const results = catalog.filter(song => [song.title, song.artist, song.genre].join(' ').toLowerCase().includes(term))
       .sort((a, b) => rank(a) - rank(b));
-    const list = setlists.get(room);
     const rows = results.map(song => {
       const row = document.createElement('div');
       row.className = 'karaoke-row';
@@ -87,20 +186,12 @@
         el('karaoke-stop').focus({preventScroll:true});
       });
       start.setAttribute('aria-pressed', String(song === active));
-      const add = button(list.includes(song) ? 'Added' : 'Add', 'Add ' + song.title + ' to my setlist', () => {
-        list.push(song);
-        el('karaoke-status').textContent = song.title + ' added to your setlist.';
-        add.textContent = 'Added';
-        add.disabled = true;
-        renderQueue();
-      });
-      add.disabled = list.includes(song);
-      row.append(info, start, add);
+      row.append(info, start, addToSetlist(song));
       return row;
     });
     if (!rows.length) {
       const empty = document.createElement('p');
-      empty.textContent = 'No matches in this list. Try the full catalog below.';
+      empty.textContent = 'No matches in City picks. Try the KaraFun catalog.';
       rows.push(empty);
     }
     songs.replaceChildren(...rows);
@@ -113,7 +204,9 @@
       const item = document.createElement('li');
       const row = document.createElement('div');
       row.className = 'karaoke-row';
-      row.append(trackDetails(song, song.artist), button('Play', 'Play queued ' + song.title, () => play(song)),
+      const start = song.karaFun ? karaFunLink(song, 'button outline compact')
+        : button('Play', 'Play queued ' + song.title, () => play(song));
+      row.append(trackDetails(song, song.artist), start,
         button('Remove', 'Remove ' + song.title + ' from my setlist', () => {
           list.splice(index, 1);
           el('karaoke-status').textContent = song.title + ' removed.';
@@ -125,7 +218,27 @@
     }));
   }
 
-  input.addEventListener('input', renderSongs);
+  input.addEventListener('input', () => {
+    visibleCount = pageSize;
+    renderSongs();
+  });
+  genre.addEventListener('change', () => {
+    visibleCount = pageSize;
+    renderSongs();
+  });
+  more.addEventListener('click', () => {
+    const oldCount = visibleCount;
+    visibleCount += pageSize;
+    renderSongs();
+    songs.children[oldCount]?.querySelector('a')?.focus();
+  });
+  el('karaoke-city-picks').addEventListener('click', () => {
+    if (source !== 'city') selectSource('city');
+  });
+  el('karaoke-karafun').addEventListener('click', () => {
+    if (source !== 'karafun') selectSource('karafun');
+    else if (!karaFunSongs && !catalogRequest) loadKaraFun();
+  });
   el('karaoke-stop').addEventListener('click', () => {
     stop();
     renderSongs();
@@ -139,9 +252,9 @@
       room = key;
       if (!setlists.has(key)) setlists.set(key, []);
       el('karaoke-city').textContent = title;
-      input.value = '';
+      genre.value = 'all';
       el('karaoke-status').textContent = '';
-      renderSongs();
+      selectSource('city');
       renderQueue();
     },
     stop

@@ -89,7 +89,8 @@ export default {
     if (!Object.hasOwn(assets, key)) return new Response('Not found', {status: 404});
     if (!['GET', 'HEAD'].includes(request.method)) return new Response(null, {status: 405});
     const [type, content] = assets[key];
-    const data = key.endsWith('.webp') ? Uint8Array.from(atob(content), byte => byte.charCodeAt(0)) : content;
+    const compressed = key.endsWith('.gz');
+    const data = compressed || key.endsWith('.webp') ? Uint8Array.from(atob(content), byte => byte.charCodeAt(0)) : content;
     return new Response(request.method === 'HEAD' ? null : data, {headers: {
       'Content-Type': type,
       'Cache-Control': key.endsWith('.webp') ? 'public, max-age=86400' : 'no-cache'
