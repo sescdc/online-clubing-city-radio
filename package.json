@@ -1,0 +1,9 @@
+{
+  "name": "online-clubing",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node server/build.mjs",
+    "dev": "node server/dev.mjs"
+  }
+}

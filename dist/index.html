@@ -7,6 +7,7 @@
 <meta name="description" content="Tune into local hip-hop and R&B radio or meet on one nationwide floor.">
 <title>Online Clubing | Hip-Hop Radio</title>
 <link rel="stylesheet" href="club.css">
+<script src="party.js" defer></script>
 <script src="club.js" defer></script>
 </head>
 <body>
@@ -18,19 +19,48 @@
 <section class="hero" aria-labelledby="headline">
 <div class="hero-copy">
 <h1 id="headline">Your city.<br><em>Your sound.</em></h1>
-<p>Live hip-hop and R&amp;B radio from across the U.S. Find your city’s sound or tune in with the whole country.</p>
+<p>Drop into a city party, turn on your camera and tune into live hip-hop and R&amp;B with friends.</p>
 <div class="actions"><a class="button primary" href="#city-rooms">Explore city rooms <span class="chevron down" aria-hidden="true"></span></a><a class="button outline" href="#nationwide">Join the nationwide floor <span class="chevron" aria-hidden="true"></span></a></div>
 </div>
 </section>
 <section class="nation" id="nationwide" aria-labelledby="nation-title">
 <div><div class="label"><span class="dot"></span> NATIONWIDE FLOOR</div><h2 id="nation-title">Coast to Coast</h2><p>A different city takes the floor every hour. Share the room and tune into the same featured station.</p></div>
 <div class="now"><span class="label">FEATURED CITY</span><strong id="featured-city"></strong><span id="featured-station"></span><span id="next-up"></span></div>
-<button type="button" class="button primary" id="join-national"><span class="play-icon" aria-hidden="true"></span> Tune in</button>
+<button type="button" class="button primary" id="join-national"><span class="play-icon" aria-hidden="true"></span> Open nationwide room</button>
+</section>
+<section class="match" aria-labelledby="match-title">
+<div><h2 id="match-title">Bay Area vs. St. Louis</h2><p>One shared video room for both cities. Pick either local station.</p></div>
+<button id="open-match" class="button primary" type="button">Open shared room</button>
 </section>
 <section class="deck" id="radio-deck" hidden aria-labelledby="deck-title">
 <div class="deck-head">
 <div><div class="label" id="deck-label">CITY ROOM</div><h2 id="deck-title" tabindex="-1"></h2><p id="deck-info"></p></div>
-<button id="close-player" class="button outline compact" type="button">Close player</button>
+<button id="close-player" class="button outline compact" type="button">Close room</button>
+</div>
+<div class="room-layout">
+<section class="party" aria-label="Video party">
+<div class="party-header"><strong>Video party</strong><span id="party-count" hidden></span></div>
+<form id="party-join" class="party-lobby">
+  <div class="lobby-mark" aria-hidden="true">▶</div>
+  <h3>Ready to join?</h3>
+  <p>Your camera and mic start off.</p>
+  <label for="party-name">Display name</label>
+  <div class="party-entry"><input id="party-name" autocomplete="nickname" maxlength="32" required><button class="button primary">Join video</button></div>
+</form>
+<div id="party-grid" class="party-grid" hidden></div>
+<div id="party-controls" class="party-controls" hidden>
+  <button id="party-mic" class="button outline compact" type="button" aria-pressed="false">Mic off</button>
+  <button id="party-camera" class="button outline compact" type="button" aria-pressed="false">Camera off</button>
+  <button id="party-sound" class="button outline compact" type="button" hidden>Enable guest audio</button>
+  <button id="party-leave" class="button leave compact" type="button">Leave video</button>
+</div>
+<p id="party-status" class="party-status" role="status"></p>
+</section>
+<aside class="radio-side" aria-label="Live radio">
+<h3>Live radio</h3>
+<div id="match-stations" class="match-stations" hidden aria-label="Pick a station">
+  <button id="match-bay" class="button outline compact" type="button">Bay Area</button>
+  <button id="match-stl" class="button outline compact" type="button">St. Louis</button>
 </div>
 <div id="player"></div>
 <div class="actions">
@@ -39,9 +69,11 @@
 <button id="save-room" class="button outline compact" type="button">Save city</button>
 </div>
 <p id="deck-feedback" class="feedback" role="status"></p>
+</aside>
+</div>
 </section>
 <section class="rooms" id="city-rooms" aria-labelledby="rooms-title">
-<div class="rooms-head"><div><h2 id="rooms-title">City rooms</h2><p>Pick a city to hear its local station.</p></div>
+<div class="rooms-head"><div><h2 id="rooms-title">City rooms</h2><p>Pick any city to join its video party and hear its local station.</p></div>
 <label class="search"><span class="search-icon" aria-hidden="true"></span><input id="city-search" type="search" placeholder="Find a city or station" aria-label="Find a city or station"></label></div>
 <div class="filters" role="group" aria-label="Filter city rooms" id="filters"></div>
 <p class="results" id="results" aria-live="polite"></p>

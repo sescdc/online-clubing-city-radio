@@ -85,7 +85,7 @@ function updateNation() {
   byId('featured-station').textContent = now.name;
   byId('next-up').textContent = 'Next: ' + next.city + ' · ' + timeFormat.format((slot + 1) * hour);
   if (current?.national && current.station.id !== now.id) {
-    byId('deck-feedback').textContent = now.city + ' is featured now. Use Tune in to switch stations.';
+    byId('deck-feedback').textContent = now.city + ' is featured now. Open the nationwide room again to switch stations.';
   }
 }
 
@@ -124,7 +124,7 @@ function renderRooms() {
     button.className = 'city';
     button.dataset.city = station.id;
     button.style.setProperty('--accent', colors[station.region]);
-    button.setAttribute('aria-current', current?.station.id === station.id && !current.national ? 'true' : 'false');
+    button.setAttribute('aria-current', current?.station.id === station.id && !current.national && !current.match ? 'true' : 'false');
     const code = document.createElement('span');
     code.className = 'city-code';
     code.setAttribute('aria-hidden','true');
@@ -154,18 +154,23 @@ function setRoomURL(id) {
 
 function updateSavedButton() {
   const button = byId('save-room');
-  button.hidden = current.national;
+  button.hidden = current.national || current.match;
   const isSaved = saved.has(current.station.id);
   button.textContent = isSaved ? 'Remove saved city' : 'Save city';
   button.setAttribute('aria-pressed', String(isSaved));
 }
 
-function openRoom(station, national, trigger = null) {
+function openRoom(station, national, trigger = null, match = false) {
   const sameStation = current?.station.id === station.id;
-  current = {station, national};
-  opener = trigger;
-  byId('deck-label').textContent = national ? 'NATIONWIDE FLOOR' : 'CITY ROOM';
-  byId('deck-title').textContent = national ? 'Coast to Coast' : station.city;
+  if (trigger || !current || current.match !== match || current.national !== national) opener = trigger;
+  current = {station, national, match};
+  const partyRoom = match ? 'bay-stl' : national ? 'nationwide' : 'city-' + station.id;
+  window.clubParty.select(partyRoom);
+  byId('match-stations').hidden = !match;
+  byId('match-bay').setAttribute('aria-pressed', String(match && station.id === 'bay'));
+  byId('match-stl').setAttribute('aria-pressed', String(match && station.id === 'stl'));
+  byId('deck-label').textContent = match ? 'SHARED PARTY' : national ? 'NATIONWIDE FLOOR' : 'CITY ROOM';
+  byId('deck-title').textContent = match ? 'Bay Area vs. St. Louis' : national ? 'Coast to Coast' : station.city;
   byId('deck-info').textContent = national ? station.city + ' · ' + station.name : station.name;
   byId('deck-feedback').textContent = '';
   byId('station-link').href = station.url;
@@ -186,9 +191,9 @@ function openRoom(station, national, trigger = null) {
   }
   updateSavedButton();
   deck.hidden = false;
-  setRoomURL(national ? 'nationwide' : station.id);
+  setRoomURL(match ? 'bay-stl' : national ? 'nationwide' : station.id);
   for (const button of grid.querySelectorAll('[data-city]')) {
-    button.setAttribute('aria-current', String(!national && button.dataset.city === station.id));
+    button.setAttribute('aria-current', String(!match && !national && button.dataset.city === station.id));
   }
   if (trigger) {
     deck.scrollIntoView({block:'start'});
@@ -196,12 +201,19 @@ function openRoom(station, national, trigger = null) {
   }
 }
 
+const bay = stations.find(station => station.id === 'bay');
+const stl = stations.find(station => station.id === 'stl');
+byId('open-match').addEventListener('click', event => openRoom(bay, false, event.currentTarget, true));
+byId('match-bay').addEventListener('click', () => openRoom(bay, false, null, true));
+byId('match-stl').addEventListener('click', () => openRoom(stl, false, null, true));
+
 search.addEventListener('input', renderRooms);
 byId('join-national').addEventListener('click', event => {
   openRoom(relayAt(slotAt(Date.now())), true, event.currentTarget);
 });
 byId('close-player').addEventListener('click', () => {
   const oldTrigger = opener?.isConnected ? opener : grid.querySelector('[aria-current=true]') ?? search;
+  window.clubParty.select(null);
   deck.hidden = true;
   byId('player').replaceChildren();
   current = null;
@@ -239,6 +251,7 @@ updateNation();
 setInterval(updateNation, 5000);
 const room = new URL(location.href).searchParams.get('room');
 const requestedStation = stations.find(station => station.id === room);
-if (room === 'nationwide') openRoom(relayAt(slotAt(Date.now())), true);
+if (room === 'bay-stl') openRoom(bay, false, null, true);
+else if (room === 'nationwide') openRoom(relayAt(slotAt(Date.now())), true);
 else if (requestedStation) openRoom(requestedStation, false);
 if (current && location.hash === '#radio-deck') deck.scrollIntoView({block:'start'});
