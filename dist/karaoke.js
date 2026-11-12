@@ -42,10 +42,12 @@
     ['17214','nelly'], ['6863','hot'], ['8520','tlc'], ['5187','bey'], ['8908','dc'],
     ['13212','alicia'], ['13912','salt']
   ].map(([id, key]) => [id, catalog.find(song => song.id === key)]));
-  const directLinks = {
-    '17214': 'https://www.karafun.com/karaoke/nelly/ride-wit-me/',
-    '6863': 'https://www.karafun.com/karaoke/nelly/hot-in-herre/'
-  };
+  const catalogIds = new Map([...catalogMatches].map(([id, song]) => [song, id]));
+  const mobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const appDownload = /Android/i.test(navigator.userAgent)
+    ? 'https://www.karafun.com/download/'
+    : 'https://apps.apple.com/app/apple-store/id431050674?platform=iphone';
   const cityPicks = {
     bay:['hammer','pac'], la:['snoop','pac'], sea:['mix'], hnl:['bruno'],
     stl:['nelly','hot'], det:['em'], nyc:['alicia','salt'],
@@ -78,16 +80,17 @@
       .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
   }
 
-  function karaFunLink(song, className) {
+  function karaFunURL(id) {
+    const url = new URL('https://www.karafun.com/web/');
+    url.searchParams.set('song', id);
+    return url.href;
+  }
+
+  function openLink(url) {
     const link = document.createElement('a');
-    const url = new URL('https://www.karafun.com/search/');
-    url.searchParams.set('query', song.title + ' ' + song.artist);
-    link.href = directLinks[song.id] ?? url.href;
+    link.href = url;
     link.target = '_blank';
     link.rel = 'noopener';
-    link.className = className + ' karaoke-external';
-    link.textContent = 'KaraFun';
-    link.setAttribute('aria-label', 'Find ' + song.title + ' by ' + song.artist + ' on KaraFun');
     return link;
   }
 
@@ -158,7 +161,7 @@
     songs.replaceChildren(...shown.map(song => {
       const row = document.createElement('div');
       row.className = 'karaoke-row';
-      row.append(trackDetails(song, song.artist), startControl(song), addToSetlist(song));
+      row.append(trackControl(song, song.artist), addToSetlist(song));
       return row;
     }));
   }
@@ -177,6 +180,7 @@
     videoPlayer = null;
     el('karaoke-video').replaceChildren();
     el('karaoke-stage').hidden = true;
+    el('karaoke-download').hidden = true;
     playbackStatus.textContent = '';
   }
 
@@ -200,6 +204,7 @@
     const audio = document.createElement('audio');
     audio.className = 'karaoke-audio';
     audio.controls = true;
+    audio.preload = 'auto';
     audio.src = song.audio;
     audio.setAttribute('aria-label', song.title + ' backing track');
     nativeAudio = audio;
@@ -219,8 +224,21 @@
     audio.addEventListener('ended', () => {
       if (token === playbackToken) playbackStatus.textContent = 'Track ended. Press Play to sing it again.';
     });
-    audio.play().catch(() => {
-      if (token === playbackToken) playbackStatus.textContent = 'Tap Play on the audio controls to start.';
+    function showAudioLink() {
+      if (token !== playbackToken) return;
+      const link = el('karaoke-download');
+      link.href = song.audio;
+      link.hidden = false;
+      playbackStatus.textContent = 'The player could not load this track. Open the audio directly.';
+    }
+    audio.addEventListener('error', showAudioLink);
+    audio.play().catch(error => {
+      if (token !== playbackToken) return;
+      if (error.name === 'NotAllowedError') {
+        playbackStatus.textContent = 'Tap Play on the audio controls to start.';
+      } else {
+        showAudioLink();
+      }
     });
   }
 
@@ -254,40 +272,108 @@
     }).catch(() => report('Tap Play on the video or use a playback link below.'));
   }
 
-  function play(song) {
-    const backing = song.karaFun ? catalogMatches.get(song.id) : song;
-    if (!backing) return;
+  function showStage(song, closeLabel = 'Stop') {
     stop();
     active = song;
-    const token = playbackToken;
-    const provider = song.karaFun ? song : [...catalogMatches].find(([, match]) => match === song);
-    const providerSong = Array.isArray(provider) ? {...song, id: provider[0]} : provider;
     const watchLink = el('karaoke-watch');
-    const providerLink = el('karaoke-provider');
-    watchLink.hidden = !backing.video;
-    providerLink.hidden = !providerSong;
-    if (backing.video) watchLink.href = 'https://www.youtube.com/watch?v=' + backing.video;
-    if (providerSong) providerLink.href = karaFunLink(providerSong, '').href;
+    watchLink.hidden = true;
+    el('karaoke-stop').textContent = closeLabel;
     el('karaoke-track').textContent = song.title + ' · ' + song.artist;
     el('karaoke-stage').hidden = false;
-    playbackStatus.textContent = 'Loading backing track…';
-    if (backing.audio) playOriginal(backing, token);
-    else playVideo(backing, token);
+  }
+
+  function focusStage() {
     renderSongs();
+    renderQueue();
     el('karaoke-stage').scrollIntoView({block: 'nearest'});
     el('karaoke-stop').focus({preventScroll: true});
   }
 
-  function startControl(song) {
-    if (song.karaFun && !catalogMatches.has(song.id)) return karaFunLink(song, 'button outline compact');
-    const label = song.audio ? 'Play' : 'Try here';
-    const start = button(label, 'Play ' + song.title + ' in the room', () => play(song));
-    start.setAttribute('aria-pressed', String(song === active));
-    if (!song.karaFun) return start;
+  function showMobileSong(song, cover = song) {
+    showStage(song, 'Close');
+    const searchText = song.title + ' ' + song.artist;
+    const guide = document.createElement('p');
+    guide.textContent = 'Copy the song, then paste it into Search in the KaraFun app.';
+    const searchValue = document.createElement('input');
+    searchValue.className = 'karaoke-copy-field';
+    searchValue.value = searchText;
+    searchValue.readOnly = true;
+    searchValue.setAttribute('aria-label', 'Song title and artist to copy');
+    const copy = button('Copy song', 'Copy song title and artist', async () => {
+      try {
+        await navigator.clipboard.writeText(searchText);
+        if (active === song) playbackStatus.textContent = 'Copied. Paste it into Search in KaraFun.';
+      } catch {
+        if (active !== song) return;
+        searchValue.focus();
+        searchValue.select();
+        playbackStatus.textContent = 'Touch and hold the selected text to copy it.';
+      }
+    });
+    const download = openLink(appDownload);
+    download.className = 'catalog-link';
+    download.textContent = 'Get the KaraFun app';
     const actions = document.createElement('div');
-    actions.className = 'karaoke-track-actions';
-    actions.append(start, karaFunLink(song, 'button outline compact'));
-    return actions;
+    actions.className = 'karaoke-copy-actions';
+    actions.append(copy, download);
+    el('karaoke-video').append(guide, searchValue, actions);
+    if (cover?.video) {
+      const watchLink = el('karaoke-watch');
+      watchLink.href = 'https://www.youtube.com/watch?v=' + cover.video;
+      watchLink.hidden = false;
+    }
+    focusStage();
+  }
+
+  function play(song) {
+    showStage(song);
+    const watchLink = el('karaoke-watch');
+    if (song.video) {
+      watchLink.href = 'https://www.youtube.com/watch?v=' + song.video;
+      watchLink.hidden = false;
+    }
+    playbackStatus.textContent = 'Loading backing track…';
+    if (song.audio) playOriginal(song, playbackToken);
+    else playVideo(song, playbackToken);
+    focusStage();
+  }
+
+  function trackControl(song, detail) {
+    const id = song.karaFun ? song.id : catalogIds.get(song);
+    let control;
+    let action;
+    if (id && !mobileDevice) {
+      control = openLink(karaFunURL(id));
+      control.addEventListener('click', () => {
+        if (!active) return;
+        stop();
+        setTimeout(() => {
+          if (!active) {
+            renderSongs();
+            renderQueue();
+          }
+        }, 0);
+      });
+      action = 'Play on KaraFun';
+    } else {
+      control = document.createElement('button');
+      control.type = 'button';
+      control.addEventListener('click', () => id ? showMobileSong(song, song.karaFun ? catalogMatches.get(id) : song) : play(song));
+      action = id ? 'Song options' : song.audio ? 'Play' : 'Play video';
+      control.setAttribute('aria-pressed', String(song === active));
+    }
+    control.className = 'karaoke-track-control';
+    const info = document.createElement('span');
+    const title = document.createElement('strong');
+    title.textContent = song.title;
+    const artist = document.createElement('small');
+    artist.textContent = detail;
+    info.append(title, artist);
+    const indicator = document.createElement('span');
+    indicator.className = 'karaoke-track-action';
+    indicator.textContent = action;
+    control.append(info, indicator);
+    return control;
   }
 
   function button(text, label, action) {
@@ -298,16 +384,6 @@
     control.setAttribute('aria-label', label);
     control.addEventListener('click', action);
     return control;
-  }
-
-  function trackDetails(song, detail) {
-    const info = document.createElement('span');
-    const title = document.createElement('strong');
-    title.textContent = song.title;
-    const artist = document.createElement('small');
-    artist.textContent = detail;
-    info.append(title, artist);
-    return info;
   }
 
   function renderSongs() {
@@ -323,8 +399,7 @@
     const rows = results.map(song => {
       const row = document.createElement('div');
       row.className = 'karaoke-row';
-      const info = trackDetails(song, song.artist + ' · ' + song.genre);
-      row.append(info, startControl(song), addToSetlist(song));
+      row.append(trackControl(song, song.artist + ' · ' + song.genre), addToSetlist(song));
       return row;
     });
     if (!rows.length) {
@@ -342,8 +417,7 @@
       const item = document.createElement('li');
       const row = document.createElement('div');
       row.className = 'karaoke-row';
-      const start = startControl(song);
-      row.append(trackDetails(song, song.artist), start,
+      row.append(trackControl(song, song.artist),
         button('Remove', 'Remove ' + song.title + ' from my setlist', () => {
           list.splice(index, 1);
           el('karaoke-status').textContent = song.title + ' removed.';
@@ -367,7 +441,7 @@
     const oldCount = visibleCount;
     visibleCount += pageSize;
     renderSongs();
-    songs.children[oldCount]?.querySelector('a')?.focus();
+    songs.children[oldCount]?.querySelector('.karaoke-track-control')?.focus();
   });
   el('karaoke-city-picks').addEventListener('click', () => {
     if (source !== 'city') selectSource('city');
