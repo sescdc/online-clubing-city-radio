@@ -38,16 +38,37 @@ const stationRows = [
   ['kc','Kansas City','KC','Midwest','Hot 103 Jamz','hot-103-jamz-8181'],
   ['hnl','Honolulu','HNL','West','93.9 The Beat','939-the-beat-825'],
   ['okc','Oklahoma City','OKC','South','Power 103.5','https://kvsp.com/'],
-  ['slc','Salt Lake City','SLC','West','92.5 The Beat','https://u92slc.com/'],
+  ['slc','Salt Lake City','SLC','West','92.5 The Beat','https://listen.streamon.fm/kuuu'],
   ['pit','Pittsburgh','PIT','Northeast','WAMO 107.3','wamo-1073-10953'],
   ['orf','Hampton Roads','757','South','103 Jamz','103-jamz-2453'],
   ['fresno','Fresno','FRE','West','B95','b95-141'],
   ['cin','Cincinnati','CIN','Midwest','101.1 The Wiz','1011-the-wiz-8946'],
 ];
 const colors = {West:'#7ce9e0', Northeast:'#c6a7ff', South:'#ffb585', Midwest:'#e7ff66'};
+const streamOverrides = {
+  phx:'https://ice42.securenetsystems.net/KZCE',
+  den:'https://live.amperwave.net/direct/audacy-kqksfmaac-imc',
+  pdx:'https://stream.revma.ihrhls.com/zc4319',
+  msp:'https://stream.revma.ihrhls.com/zc6913',
+  okc:'https://crystalout.surfernetwork.com:8001/KVSP_MP3',
+  slc:'https://ais-sa1.streamon.fm/7166_48k.aac',
+  dfw:'https://playerservices.streamtheworld.com/api/livestream-redirect/KBFBFMAAC.aac',
+  bal:'https://playerservices.streamtheworld.com/api/livestream-redirect/WERQFMAAC.aac',
+  dc:'https://playerservices.streamtheworld.com/api/livestream-redirect/WKYSFMAAC_SC',
+  cle:'https://playerservices.streamtheworld.com/api/livestream-redirect/WENZFMAAC.aac',
+  rdu:'https://playerservices.streamtheworld.com/api/livestream-redirect/WQOKFMAAC.aac',
+  clt:'https://playerservices.streamtheworld.com/api/livestream-redirect/WPEGFMAACHI_SC',
+  ind:'https://playerservices.streamtheworld.com/api/livestream-redirect/WHHHFMAAC.aac',
+  tpa:'https://playerservices.streamtheworld.com/api/livestream-redirect/WLLDFMAAC.aac',
+  kc:'https://playerservices.streamtheworld.com/api/livestream-redirect/KPRSFMAAC_SC?dist=',
+  pit:'https://live.amperwave.net/direct/audacy-wdsyhd2aac-imc',
+  cin:'https://playerservices.streamtheworld.com/api/livestream-redirect/WIZFFMAAC.aac'
+};
 const stations = stationRows.map(([id, city, code, region, name, source]) => {
   const embed = !source.startsWith('https://');
-  return {id, city, code, region, name, embed, url: embed ? 'https://www.iheart.com/live/' + source + '/' : source};
+  const url = embed ? 'https://www.iheart.com/live/' + source + '/' : source;
+  const stream = streamOverrides[id] ?? (embed ? 'https://stream.revma.ihrhls.com/zc' + source.split('-').at(-1) : null);
+  return {id, city, code, region, name, embed, url, stream};
 });
 const relay = stations.filter(station => station.embed);
 const byId = id => document.getElementById(id);
@@ -57,6 +78,7 @@ const grid = byId('city-grid');
 const hour = 60 * 60 * 1000;
 const timeFormat = new Intl.DateTimeFormat(undefined, {hour:'numeric',minute:'2-digit',timeZoneName:'short'});
 let current = null;
+let musicMode = 'radio';
 let filter = 'All cities';
 let opener = null;
 let lastHour = -1;
@@ -160,11 +182,97 @@ function updateSavedButton() {
   button.setAttribute('aria-pressed', String(isSaved));
 }
 
+function stopRadio() {
+  const player = byId('player');
+  const audio = player.querySelector('audio');
+  if (audio) {
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+  }
+  player.replaceChildren();
+  byId('radio-status').textContent = '';
+}
+
+function showStationPlayer(station) {
+  const player = byId('player');
+  if (station.embed) {
+    const frame = document.createElement('iframe');
+    frame.src = station.url + '?embed=true&theme=dark';
+    frame.title = station.name + ' live radio player';
+    frame.allow = 'autoplay; encrypted-media';
+    player.replaceChildren(frame);
+  } else {
+    const info = document.createElement('p');
+    info.className = 'external-player';
+    info.textContent = 'Use the station player link to listen live.';
+    player.replaceChildren(info);
+  }
+}
+
+function showRadio(station, startOnTap) {
+  stopRadio();
+  const player = byId('player');
+  const status = byId('radio-status');
+  if (!startOnTap || !station.stream) {
+    showStationPlayer(station);
+    return;
+  }
+
+  const audio = document.createElement('audio');
+  audio.className = 'radio-native';
+  audio.controls = true;
+  audio.setAttribute('aria-label', station.name + ' live radio');
+  audio.src = station.stream;
+  player.append(audio);
+  status.textContent = 'Connecting to ' + station.name + '…';
+
+  function unavailable() {
+    if (!player.contains(audio)) return;
+    stopRadio();
+    status.textContent = 'Automatic playback is unavailable for this stream. Try the station player.';
+    showStationPlayer(station);
+  }
+  const startupTimer = setTimeout(() => {
+    if (audio.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) unavailable();
+  }, 15000);
+  audio.addEventListener('error', unavailable);
+  audio.addEventListener('playing', () => {
+    clearTimeout(startupTimer);
+    status.textContent = station.name + ' is playing live.';
+  });
+  audio.addEventListener('pause', () => { if (player.contains(audio)) status.textContent = 'Radio paused.'; });
+  audio.play().catch(error => {
+    if (!player.contains(audio)) return;
+    if (error.name === 'NotAllowedError') {
+      clearTimeout(startupTimer);
+      status.textContent = 'Tap the audio control to start radio on this device.';
+    }
+    else unavailable();
+  });
+}
+
+function setMusicMode(mode, startOnTap = false) {
+  musicMode = mode;
+  const radio = mode === 'radio';
+  byId('mode-radio').setAttribute('aria-pressed', String(radio));
+  byId('mode-karaoke').setAttribute('aria-pressed', String(!radio));
+  byId('radio-panel').hidden = !radio;
+  byId('karaoke-panel').hidden = radio;
+  if (radio) {
+    window.clubKaraoke.stop();
+    showRadio(current.station, startOnTap);
+  } else {
+    stopRadio();
+    window.clubKaraoke.open(current.station, current.room, byId('deck-title').textContent);
+  }
+}
+
 function openRoom(station, national, trigger = null, match = false) {
-  const sameStation = current?.station.id === station.id;
+  const previous = current;
   if (trigger || !current || current.match !== match || current.national !== national) opener = trigger;
-  current = {station, national, match};
   const partyRoom = match ? 'bay-stl' : national ? 'nationwide' : 'city-' + station.id;
+  current = {station, national, match, room: partyRoom};
   window.clubParty.select(partyRoom);
   byId('match-stations').hidden = !match;
   byId('match-bay').setAttribute('aria-pressed', String(match && station.id === 'bay'));
@@ -174,23 +282,11 @@ function openRoom(station, national, trigger = null, match = false) {
   byId('deck-info').textContent = national ? station.city + ' · ' + station.name : station.name;
   byId('deck-feedback').textContent = '';
   byId('station-link').href = station.url;
-  const player = byId('player');
-  if (!sameStation) {
-    if (station.embed) {
-      const frame = document.createElement('iframe');
-      frame.src = station.url + '?embed=true&theme=dark';
-      frame.title = station.name + ' live radio player';
-      frame.allow = 'autoplay; encrypted-media';
-      player.replaceChildren(frame);
-    } else {
-      const info = document.createElement('p');
-      info.className = 'external-player';
-      info.textContent = 'This station plays on its own site. Use the station player link to listen live.';
-      player.replaceChildren(info);
-    }
-  }
   updateSavedButton();
   deck.hidden = false;
+  if (previous?.room !== partyRoom || previous.station.id !== station.id || (trigger && !national && !match)) {
+    setMusicMode('radio', Boolean(trigger && !national && !match));
+  }
   setRoomURL(match ? 'bay-stl' : national ? 'nationwide' : station.id);
   for (const button of grid.querySelectorAll('[data-city]')) {
     button.setAttribute('aria-current', String(!match && !national && button.dataset.city === station.id));
@@ -200,6 +296,13 @@ function openRoom(station, national, trigger = null, match = false) {
     byId('deck-title').focus({preventScroll:true});
   }
 }
+
+byId('mode-radio').addEventListener('click', () => {
+  if (musicMode !== 'radio') setMusicMode('radio', !current.national && !current.match);
+});
+byId('mode-karaoke').addEventListener('click', () => {
+  if (musicMode !== 'karaoke') setMusicMode('karaoke');
+});
 
 const bay = stations.find(station => station.id === 'bay');
 const stl = stations.find(station => station.id === 'stl');
@@ -215,7 +318,8 @@ byId('close-player').addEventListener('click', () => {
   const oldTrigger = opener?.isConnected ? opener : grid.querySelector('[aria-current=true]') ?? search;
   window.clubParty.select(null);
   deck.hidden = true;
-  byId('player').replaceChildren();
+  stopRadio();
+  window.clubKaraoke.stop();
   current = null;
   setRoomURL(null);
   for (const button of grid.querySelectorAll('[aria-current=true]')) button.setAttribute('aria-current','false');

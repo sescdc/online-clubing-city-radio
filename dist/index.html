@@ -8,6 +8,7 @@
 <title>Online Clubing | Hip-Hop Radio</title>
 <link rel="stylesheet" href="club.css">
 <script src="party.js" defer></script>
+<script src="karaoke.js" defer></script>
 <script src="club.js" defer></script>
 </head>
 <body>
@@ -56,15 +57,38 @@
 </div>
 <p id="party-status" class="party-status" role="status"></p>
 </section>
-<aside class="radio-side" aria-label="Live radio">
+<aside class="radio-side" aria-label="Room music">
+<div class="music-switch" role="group" aria-label="Room music mode">
+<button id="mode-radio" class="button outline compact" type="button" aria-pressed="true" aria-controls="radio-panel">Live radio</button>
+<button id="mode-karaoke" class="button outline compact" type="button" aria-pressed="false" aria-controls="karaoke-panel">Karaoke</button>
+</div>
+<div id="radio-panel">
 <h3>Live radio</h3>
 <div id="match-stations" class="match-stations" hidden aria-label="Pick a station">
   <button id="match-bay" class="button outline compact" type="button">Bay Area</button>
   <button id="match-stl" class="button outline compact" type="button">St. Louis</button>
 </div>
 <div id="player"></div>
+<p id="radio-status" class="feedback" role="status"></p>
 <div class="actions">
 <a id="station-link" class="button outline compact" target="_blank" rel="noopener">Open station player <span class="chevron" aria-hidden="true"></span></a>
+</div>
+</div>
+<section id="karaoke-panel" class="karaoke" aria-labelledby="karaoke-title" hidden>
+<div class="karaoke-heading"><div class="label" id="karaoke-city"></div><h3 id="karaoke-title">Karaoke stage</h3>
+<p>Pick a backing track and use your party mic to sing. Playback is controlled on your device.</p></div>
+<div id="karaoke-stage" class="karaoke-stage" hidden>
+<div class="karaoke-now"><strong id="karaoke-track"></strong><button id="karaoke-stop" class="button outline compact" type="button">Stop</button></div>
+<div id="karaoke-video"></div>
+<a id="karaoke-watch" target="_blank" rel="noopener" class="catalog-link">Watch on YouTube</a>
+</div>
+<label class="search karaoke-search"><span class="search-icon" aria-hidden="true"></span><input id="karaoke-search" type="search" placeholder="Find a song or artist" aria-label="Find a song or artist"></label>
+<div id="karaoke-songs" class="karaoke-list"></div>
+<a id="karaoke-browse" class="catalog-link" href="https://www.karafun.com/karaoke/" target="_blank" rel="noopener">Browse the KaraFun catalog</a>
+<div class="karaoke-queue"><h4>My setlist</h4><p id="karaoke-empty">Add songs to plan your turn.</p><ol id="karaoke-queue"></ol></div>
+<p class="feedback" id="karaoke-status" role="status"></p>
+</section>
+<div class="actions room-actions">
 <button id="share-room" class="button outline compact" type="button">Copy room link</button>
 <button id="save-room" class="button outline compact" type="button">Save city</button>
 </div>
@@ -73,7 +97,7 @@
 </div>
 </section>
 <section class="rooms" id="city-rooms" aria-labelledby="rooms-title">
-<div class="rooms-head"><div><h2 id="rooms-title">City rooms</h2><p>Pick any city to join its video party and hear its local station.</p></div>
+<div class="rooms-head"><div><h2 id="rooms-title">City rooms</h2><p>Tap a city to start its radio and open the video party. Switch to Karaoke when you’re ready to sing.</p></div>
 <label class="search"><span class="search-icon" aria-hidden="true"></span><input id="city-search" type="search" placeholder="Find a city or station" aria-label="Find a city or station"></label></div>
 <div class="filters" role="group" aria-label="Filter city rooms" id="filters"></div>
 <p class="results" id="results" aria-live="polite"></p>

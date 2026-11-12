@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 const assetTypes = {
   'index.html': 'text/html; charset=utf-8',
   'club.js': 'text/javascript; charset=utf-8',
+  'karaoke.js': 'text/javascript; charset=utf-8',
   'party.js': 'text/javascript; charset=utf-8',
   'club.css': 'text/css; charset=utf-8',
   'hero.webp': 'image/webp'
