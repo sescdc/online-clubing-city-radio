@@ -360,7 +360,12 @@ export default {
       'Content-Type': type,
       'Cache-Control': key.endsWith('.webp') || isAudio ? 'public, max-age=86400' : 'no-cache'
     };
-    if (encoding) responseHeaders['Content-Encoding'] = encoding;
+    if (encoding) {
+      if (request.method === 'HEAD') return new Response(null, {headers: responseHeaders});
+      // Compression here is for the Worker bundle. Let hosting negotiate HTTP compression.
+      const body = new Blob([data]).stream().pipeThrough(new DecompressionStream(encoding));
+      return new Response(body, {headers: responseHeaders});
+    }
     if (isAudio) {
       responseHeaders['Accept-Ranges'] = 'bytes';
       const range = request.headers.get('Range');
