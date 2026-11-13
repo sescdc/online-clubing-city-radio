@@ -105,9 +105,6 @@ async function handleParty(request, env, path) {
       db.prepare(`DELETE FROM party_meetings WHERE room = ? AND (host = ? OR guest = ?)
         AND EXISTS (SELECT 1 FROM party_members WHERE room = ? AND id = ? AND token = ?)`)
         .bind(room, id, id, room, id, token),
-      db.prepare(`DELETE FROM karaoke_turns WHERE room = ? AND performer_id = ?
-        AND EXISTS (SELECT 1 FROM party_members WHERE room = ? AND id = ? AND token = ?)`)
-        .bind(room, id, room, id, token),
       db.prepare('DELETE FROM party_members WHERE room = ? AND id = ? AND token = ?').bind(room, id, token)
     ]);
     return reply({});
@@ -187,6 +184,8 @@ async function handleParty(request, env, path) {
 const trackDuration = Object.freeze({'city-lights': 30_750, 'after-hours': 35_030});
 const youtubeTrack = /^youtube:[A-Za-z0-9_-]{11}$/;
 const countdown = 5000;
+const videoStartupWindow = 90_000;
+const maxVideoDuration = 12 * 60 * 60_000;
 const queueLifetime = 2 * 60 * 60 * 1000;
 
 async function handleKaraoke(request, env) {
@@ -223,9 +222,10 @@ async function handleKaraoke(request, env) {
     }
     if (!Number.isSafeInteger(input.id) || input.id < 1) return reply({error: 'Choose a valid turn.'}, 400);
     if (input.action === 'leave') {
-      await db.prepare('DELETE FROM karaoke_turns WHERE room = ? AND id = ? AND singer_key = ?')
+      const result = await db.prepare(`DELETE FROM karaoke_turns
+        WHERE room = ? AND id = ? AND singer_key = ? AND started_at IS NULL`)
         .bind(room, input.id, input.key).run();
-      return reply({ok: true});
+      return result.meta.changes ? reply({ok: true}) : reply({error: 'Only waiting singers can leave the queue.'}, 409);
     }
     if (input.action === 'start') {
       const party = input.party;
@@ -240,7 +240,7 @@ async function handleKaraoke(request, env) {
       if (!performer || meeting) return reply({error: 'Rejoin the singer screen before starting your song.'}, 409);
       const own = await db.prepare('SELECT track FROM karaoke_turns WHERE room = ? AND id = ? AND singer_key = ? AND started_at IS NULL')
         .bind(room, input.id, input.key).first();
-      const duration = own && (youtubeTrack.test(own.track) ? 30 * 60_000 : trackDuration[own.track]);
+      const duration = own && (youtubeTrack.test(own.track) ? videoStartupWindow : trackDuration[own.track]);
       if (!duration) return reply({error: 'Your turn is unavailable. Sign up again if it expired.'}, 409);
       const result = await db.prepare(`UPDATE karaoke_turns SET started_at = ?, ends_at = ?, performer_id = ?
         WHERE room = ? AND id = ? AND singer_key = ? AND started_at IS NULL
@@ -250,6 +250,17 @@ async function handleKaraoke(request, env) {
         .bind(now + countdown, now + countdown + duration, performer.id, room, input.id, input.key, room, cutoff, room, now,
           now - presenceWindow, now - presenceWindow, room, performer.id, performer.id, now).run();
       if (!result.meta.changes) return reply({error: 'Wait until the singer list shows you are up next.'}, 409);
+    } else if (input.action === 'video-timing') {
+      const {duration} = input;
+      if (!Number.isSafeInteger(duration) || duration < 1000 || duration > maxVideoDuration) {
+        return reply({error: 'This video length could not be used.'}, 400);
+      }
+      // Commit the length once. A local pause, seek or ended event cannot change the shared deadline.
+      await db.prepare(`UPDATE karaoke_turns SET ends_at = started_at + ?
+        WHERE room = ? AND id = ? AND singer_key = ? AND track LIKE 'youtube:%'
+          AND started_at <= ? AND ends_at > ? AND ends_at = started_at + ?`)
+        .bind(duration === videoStartupWindow ? duration + 1 : duration, room, input.id, input.key,
+          now, now, videoStartupWindow).run();
     } else {
       return reply({error: 'Unknown karaoke action.'}, 400);
     }

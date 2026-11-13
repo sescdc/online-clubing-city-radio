@@ -20,6 +20,8 @@
   const isYouTube = track => track?.startsWith('youtube:');
   let youtubeFrame = null;
   let youtubeID = null;
+  let youtubePlayer = null;
+  let youtubeAPI;
   const list = el('singer-list');
   let current = null;
   let audioTrack = null;
@@ -42,6 +44,8 @@
   function showYouTube(id) {
     if (youtubeID === id) return;
     youtubeID = id;
+    youtubePlayer?.destroy();
+    youtubePlayer = null;
     youtube.replaceChildren();
     youtubeFrame = null;
     youtube.hidden = youtubeLink.hidden = !id;
@@ -61,26 +65,67 @@
     const url = new URL('https://www.youtube.com/embed/' + youtubeID);
     url.search = new URLSearchParams({
       playsinline: '1', autoplay: String(Number(autoplay)), start: String(Math.floor(seconds)),
-      enablejsapi: '1', origin: location.origin
+      controls: '0', disablekb: '1', enablejsapi: '1', origin: location.origin
     });
     youtubeFrame.src = url.href;
   }
 
-  window.addEventListener('message', event => {
-    if (event.origin !== 'https://www.youtube.com' || !youtubeFrame || event.source !== youtubeFrame.contentWindow) return;
-    let message;
-    try { message = typeof event.data === 'string' ? JSON.parse(event.data) : event.data; } catch { return; }
-    if (message?.event === 'onStateChange' && message.info === 0 && current?.own && !current.busy && current.live?.id === current.own) {
-      void mutate(current, {action:'leave', id:current.own});
-    }
-  });
-
-  function setupVideoEvents() {
-    youtubeFrame.addEventListener('load', () => {
-      const post = data => youtubeFrame?.contentWindow?.postMessage(JSON.stringify(data), 'https://www.youtube.com');
-      post({event:'listening'});
-      post({event:'command', func:'addEventListener', args:['onStateChange']});
+  function loadYouTubeAPI() {
+    if (window.YT?.Player) return Promise.resolve(window.YT);
+    youtubeAPI ??= new Promise((resolve, reject) => {
+      window.onYouTubeIframeAPIReady = () => resolve(window.YT);
+      const script = document.createElement('script');
+      script.src = 'https://www.youtube.com/iframe_api';
+      script.addEventListener('error', reject, {once:true});
+      document.head.append(script);
+    }).catch(error => {
+      youtubeAPI = null;
+      throw error;
     });
+    return youtubeAPI;
+  }
+
+  async function reportVideoTiming(session, turn, player) {
+    if (current !== session || session.live?.id !== turn.id || session.own !== turn.id
+      || session.videoTimingTurn === turn.id) return;
+    const duration = Math.round(player.getDuration() * 1000);
+    if (!Number.isSafeInteger(duration) || duration < 1000) return;
+    session.videoTimingTurn = turn.id;
+    try {
+      await api(session, {action:'video-timing', id:turn.id, duration});
+    } catch {
+      session.videoTimingTurn = null;
+    }
+  }
+
+  async function setupVideoEvents(session, turn, frame) {
+    try {
+      const yt = await loadYouTubeAPI();
+      if (frame !== youtubeFrame || current !== session || session.live?.id !== turn.id) return;
+      youtubePlayer = new yt.Player(frame, {
+        events: {
+          onReady: event => void reportVideoTiming(session, turn, event.target),
+          onAutoplayBlocked: () => {
+            if (frame !== youtubeFrame || current !== session || session.live?.id !== turn.id) return;
+            sound.hidden = false;
+            audioStatus.textContent = 'Tap Play video to join the song in progress.';
+          },
+          onStateChange: event => {
+            if (frame !== youtubeFrame || current !== session || session.live?.id !== turn.id) return;
+            if (event.data === yt.PlayerState.PLAYING) {
+              sound.hidden = true;
+              audioStatus.textContent = '';
+              void reportVideoTiming(session, turn, event.target);
+            } else if (event.data === yt.PlayerState.PAUSED && elapsed(session) * 1000 < turn.ends_at - turn.started_at) {
+              sound.hidden = false;
+              audioStatus.textContent = 'Tap Play video to rejoin the song in progress.';
+            }
+          }
+        }
+      });
+    } catch {
+      // The embed and direct YouTube link are still available.
+    }
   }
 
   function updatePlayback(session, turn, milliseconds) {
@@ -92,7 +137,7 @@
       const remaining = 'Starting in ' + Math.min(5, Math.ceil(-milliseconds / 1000));
       if (countdown.textContent !== remaining) countdown.textContent = remaining;
     }
-    sound.hidden = beforeStart;
+    if (!video || beforeStart) sound.hidden = beforeStart;
     el('stage-display').hidden = video && !beforeStart;
     if (video) {
       showYouTube(turn.track.slice(8));
@@ -100,8 +145,9 @@
       sound.textContent = 'Play video';
       if (!beforeStart && session.playingTurn !== turn.id) {
         session.playingTurn = turn.id;
-        setupVideoEvents();
+        sound.hidden = false;
         videoSource(elapsed(session), true);
+        void setupVideoEvents(session, turn, youtubeFrame);
         audioStatus.textContent = 'If playback is blocked, tap Play video or Watch on YouTube.';
       }
     } else {
@@ -175,8 +221,14 @@
   sound.addEventListener('click', () => {
     if (!current?.live || sound.hidden) return;
     if (isYouTube(current.live.track)) {
-      videoSource(elapsed(current), true);
-    } else if (soundEnabled) mute();
+      if (typeof youtubePlayer?.seekTo === 'function') {
+        youtubePlayer.seekTo(elapsed(current), true);
+        youtubePlayer.playVideo();
+      } else videoSource(elapsed(current), true);
+    } else if (soundEnabled) {
+      audio.muted = !audio.muted;
+      sound.textContent = audio.muted ? 'Unmute backing track' : 'Mute backing track';
+    }
     else playAudio(current, tracks.get(current.live.track));
   });
 
@@ -246,8 +298,8 @@
     el('singer-turn').hidden = !own;
     start.hidden = !ready;
     start.disabled = Boolean(session.busy);
+    leave.hidden = !own || own.started_at !== null;
     leave.disabled = Boolean(session.busy);
-    leave.textContent = own?.started_at ? 'End song' : 'Leave queue';
     el('singer-submit').disabled = Boolean(session.busy);
     el('singer-empty').hidden = session.turns.length > 0;
     const signature = JSON.stringify([session.turns, session.own]);
@@ -279,7 +331,10 @@
     el('karaoke-singer-heading').textContent = session.live?.singer ?? 'Singer';
     if (previous?.id !== session.live?.id) {
       session.playingTurn = null;
-      if (previous) mute();
+      if (previous) {
+        mute();
+        showYouTube(null);
+      }
       if (session.live) {
         window.clubKaraoke.stop();
         audioSource(tracks.get(session.live.track));
@@ -382,8 +437,7 @@
     void mutate(session, {action:'start', id:own.id});
   });
   leave.addEventListener('click', () => {
-    if (!current || current.busy || !current.own) return;
-    if (current.live?.id === current.own) mute();
+    if (!current || current.busy || !current.own || leave.hidden) return;
     void mutate(current, {action:'leave', id:current.own});
   });
 
