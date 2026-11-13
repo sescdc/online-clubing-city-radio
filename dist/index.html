@@ -47,7 +47,7 @@
   <h3>Ready to join?</h3>
   <p>Your camera and mic start off.</p>
   <label for="party-name">Display name</label>
-  <div class="party-entry"><input id="party-name" autocomplete="nickname" maxlength="32" required><button id="party-join-button" class="button primary">Join video</button></div>
+  <div class="party-entry"><input id="party-name" autocomplete="nickname" maxlength="32" required><button id="party-join-button" class="button primary">Join Party</button></div>
 </form>
 <div id="karaoke-main-stage" class="karaoke-main-stage" hidden>
   <section class="karaoke-singer-pane" aria-label="Singer">
@@ -109,11 +109,11 @@
 </section>
 <aside class="radio-side" aria-label="Room music">
 <div class="music-switch" role="group" aria-label="Room music mode">
-<button id="mode-radio" class="button outline compact" type="button" aria-pressed="true" aria-controls="radio-panel">Live radio</button>
+<button id="mode-radio" class="button outline compact" type="button" aria-pressed="true" aria-controls="radio-panel">Clubbin'</button>
 <button id="mode-karaoke" class="button outline compact" type="button" aria-pressed="false" aria-controls="karaoke-panel">Karaoke</button>
 </div>
 <div id="radio-panel">
-<h3>Live radio</h3>
+<h3>Clubbin'</h3>
 <div id="match-stations" class="match-stations" hidden aria-label="Pick a station">
   <button id="match-bay" class="button outline compact" type="button">Bay Area</button>
   <button id="match-stl" class="button outline compact" type="button">St. Louis</button>
@@ -121,7 +121,7 @@
 <div id="player"></div>
 <p id="radio-status" class="feedback" role="status"></p>
 <div class="actions">
-<a id="station-link" class="button outline compact" target="_blank" rel="noopener">Open station player <span class="chevron" aria-hidden="true"></span></a>
+<a id="station-link" class="button outline compact" target="_blank" rel="noopener" hidden>Open station player <span class="chevron" aria-hidden="true"></span></a>
 </div>
 </div>
 <section id="karaoke-panel" class="karaoke" aria-labelledby="karaoke-title" hidden>

@@ -58,7 +58,6 @@ footer{display:flex;justify-content:space-between;gap:16px;border-top:1px solid 
 .music-switch{display:flex;gap:7px;margin-bottom:15px}
 .music-switch button{flex:1}
 .music-switch [aria-pressed=true]{color:#191029;background:var(--orange);border-color:var(--orange)}
-.radio-native{display:block;width:100%;height:50px;margin-top:12px}
 .radio-side .feedback:not(:empty){margin-top:7px}
 .karaoke-heading{padding:14px;border:1px solid #355985;border-radius:9px;background:linear-gradient(145deg,#153761,#10264a 78%)}
 .karaoke-heading h3{margin:3px 0 6px;font-size:24px;line-height:1.2}

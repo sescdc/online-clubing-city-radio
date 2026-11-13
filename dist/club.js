@@ -79,6 +79,7 @@ const hour = 60 * 60 * 1000;
 const timeFormat = new Intl.DateTimeFormat(undefined, {hour:'numeric',minute:'2-digit',timeZoneName:'short'});
 let current = null;
 let musicMode = 'radio';
+let radioStartupTimer;
 let filter = 'All cities';
 let opener = null;
 let lastHour = -1;
@@ -183,72 +184,59 @@ function updateSavedButton() {
 }
 
 function stopRadio() {
+  clearTimeout(radioStartupTimer);
   const player = byId('player');
   const audio = player.querySelector('audio');
+  player.replaceChildren();
   if (audio) {
     audio.pause();
     audio.removeAttribute('src');
     audio.load();
   }
-  player.replaceChildren();
+  byId('station-link').hidden = true;
   byId('radio-status').textContent = '';
-}
-
-function showStationPlayer(station) {
-  const player = byId('player');
-  if (station.embed) {
-    const frame = document.createElement('iframe');
-    frame.src = station.url + '?embed=true&theme=dark';
-    frame.title = station.name + ' live radio player';
-    frame.allow = 'autoplay; encrypted-media';
-    player.replaceChildren(frame);
-  } else {
-    const info = document.createElement('p');
-    info.className = 'external-player';
-    info.textContent = 'Use the station player link to listen live.';
-    player.replaceChildren(info);
-  }
 }
 
 function showRadio(station, startOnTap) {
   stopRadio();
   const player = byId('player');
   const status = byId('radio-status');
-  if (!startOnTap || !station.stream) {
-    showStationPlayer(station);
+  const stationLink = byId('station-link');
+  if (!station.stream) {
+    status.textContent = 'The live stream is unavailable in this room.';
+    stationLink.hidden = false;
     return;
   }
 
   const audio = document.createElement('audio');
-  audio.className = 'radio-native';
-  audio.controls = true;
-  audio.setAttribute('aria-label', station.name + ' live radio');
   audio.src = station.stream;
+  audio.hidden = true;
+  audio.disableRemotePlayback = true;
   player.append(audio);
   status.textContent = 'Connecting to ' + station.name + '…';
 
   function unavailable() {
     if (!player.contains(audio)) return;
     stopRadio();
-    status.textContent = 'Automatic playback is unavailable for this stream. Try the station player.';
-    showStationPlayer(station);
+    status.textContent = 'Could not connect to ' + station.name + '. Choose Clubbin’ to retry.';
+    stationLink.hidden = false;
   }
-  const startupTimer = setTimeout(() => {
-    if (audio.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) unavailable();
-  }, 15000);
+
+  radioStartupTimer = setTimeout(unavailable, 15000);
   audio.addEventListener('error', unavailable);
   audio.addEventListener('playing', () => {
-    clearTimeout(startupTimer);
+    if (!player.contains(audio)) return;
+    clearTimeout(radioStartupTimer);
     status.textContent = station.name + ' is playing live.';
   });
-  audio.addEventListener('pause', () => { if (player.contains(audio)) status.textContent = 'Radio paused.'; });
   audio.play().catch(error => {
     if (!player.contains(audio)) return;
     if (error.name === 'NotAllowedError') {
-      clearTimeout(startupTimer);
-      status.textContent = 'Tap the audio control to start radio on this device.';
-    }
-    else unavailable();
+      stopRadio();
+      status.textContent = startOnTap
+        ? 'Your browser blocked the music. Choose Clubbin’ to try again.'
+        : 'Choose Clubbin’ to enter with music.';
+    } else unavailable();
   });
 }
 
@@ -261,7 +249,7 @@ function setMusicMode(mode, startOnTap = false) {
   byId('karaoke-panel').hidden = radio;
   deck.classList.toggle('karaoke-mode', !radio);
   byId('party-screen-title').textContent = radio ? 'Video party' : 'Singer screen';
-  byId('party-join-button').textContent = radio ? 'Join video' : 'Join singer screen';
+  byId('party-join-button').textContent = radio ? 'Join Party' : 'Join singer screen';
   const roomURL = new URL(location.href);
   if (radio) roomURL.searchParams.delete('mode');
   else roomURL.searchParams.set('mode', 'karaoke');
@@ -278,9 +266,9 @@ function setMusicMode(mode, startOnTap = false) {
   }
 }
 
-function openRoom(station, national, trigger = null, match = false) {
+function openRoom(station, national, trigger = null, match = false, mode = 'radio') {
   const previous = current;
-  if (trigger || !current || current.match !== match || current.national !== national) opener = trigger;
+  if (trigger && !trigger.closest('#match-stations')) opener = trigger;
   const partyRoom = match ? 'bay-stl' : national ? 'nationwide' : 'city-' + station.id;
   current = {station, national, match, room: partyRoom};
   window.clubParty.select(partyRoom);
@@ -295,8 +283,8 @@ function openRoom(station, national, trigger = null, match = false) {
   byId('station-link').href = station.url;
   updateSavedButton();
   deck.hidden = false;
-  if (previous?.room !== partyRoom || previous.station.id !== station.id || (trigger && !national && !match)) {
-    setMusicMode('radio', Boolean(trigger && !national && !match));
+  if (previous?.room !== partyRoom || previous.station.id !== station.id || trigger) {
+    setMusicMode(mode, Boolean(trigger));
   }
   setRoomURL(match ? 'bay-stl' : national ? 'nationwide' : station.id);
   for (const button of grid.querySelectorAll('[data-city]')) {
@@ -323,7 +311,10 @@ window.addEventListener('club-meeting', event => {
 });
 
 byId('mode-radio').addEventListener('click', () => {
-  if (musicMode !== 'radio') setMusicMode('radio', !current.national && !current.match);
+  if (!current) return;
+  if (musicMode !== 'radio' || !byId('player').querySelector('audio')) setMusicMode('radio', true);
+  deck.scrollIntoView({block:'start'});
+  byId('deck-title').focus({preventScroll:true});
 });
 byId('mode-karaoke').addEventListener('click', () => {
   if (musicMode !== 'karaoke') {
@@ -335,8 +326,8 @@ byId('mode-karaoke').addEventListener('click', () => {
 const bay = stations.find(station => station.id === 'bay');
 const stl = stations.find(station => station.id === 'stl');
 byId('open-match').addEventListener('click', event => openRoom(bay, false, event.currentTarget, true));
-byId('match-bay').addEventListener('click', () => openRoom(bay, false, null, true));
-byId('match-stl').addEventListener('click', () => openRoom(stl, false, null, true));
+byId('match-bay').addEventListener('click', event => openRoom(bay, false, event.currentTarget, true));
+byId('match-stl').addEventListener('click', event => openRoom(stl, false, event.currentTarget, true));
 
 search.addEventListener('input', renderRooms);
 byId('join-national').addEventListener('click', event => {
@@ -353,6 +344,7 @@ byId('close-player').addEventListener('click', () => {
   closeURL.searchParams.delete('mode');
   history.replaceState(null, '', closeURL);
   current = null;
+  opener = null;
   setRoomURL(null);
   for (const button of grid.querySelectorAll('[aria-current=true]')) button.setAttribute('aria-current','false');
   oldTrigger.focus();
@@ -394,8 +386,8 @@ setInterval(updateNation, 5000);
 const roomParams = new URL(location.href).searchParams;
 const room = roomParams.get('room');
 const requestedStation = stations.find(station => station.id === room);
-if (room === 'bay-stl') openRoom(bay, false, null, true);
-else if (room === 'nationwide') openRoom(relayAt(slotAt(Date.now())), true);
-else if (requestedStation) openRoom(requestedStation, false);
-if (current && roomParams.get('mode') === 'karaoke') setMusicMode('karaoke');
+const requestedMode = roomParams.get('mode') === 'karaoke' ? 'karaoke' : 'radio';
+if (room === 'bay-stl') openRoom(bay, false, null, true, requestedMode);
+else if (room === 'nationwide') openRoom(relayAt(slotAt(Date.now())), true, null, false, requestedMode);
+else if (requestedStation) openRoom(requestedStation, false, null, false, requestedMode);
 if (current && location.hash === '#radio-deck') deck.scrollIntoView({block:'start'});
