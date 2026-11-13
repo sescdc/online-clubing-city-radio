@@ -6,6 +6,7 @@ const assetTypes = {
   'club.js': 'text/javascript; charset=utf-8',
   'stage.js': 'text/javascript; charset=utf-8',
   'karaoke.js': 'text/javascript; charset=utf-8',
+  'party-segmentation-worker.js': 'text/javascript; charset=utf-8',
   'party-background.js': 'text/javascript; charset=utf-8',
   'party.js': 'text/javascript; charset=utf-8',
   'club.css': 'text/css; charset=utf-8',
@@ -23,12 +24,17 @@ for (const [name, type] of Object.entries(assetTypes)) {
   assets[name] = [type, /\.(webp|gz|mp3)$/.test(name) ? file.toString('base64') : file.toString('utf8')];
 }
 
-// Serve the CPU model and its runtime from the same origin as the video room.
+// Serve the selfie model and its runtimes from the same origin as the video room.
 const modelFiles = {
   'tf.min.js': ['node_modules/@tensorflow/tfjs/dist/tf.min.js', 'text/javascript'],
+  'tf-backend-wasm.min.js': ['node_modules/@tensorflow/tfjs-backend-wasm/dist/tf-backend-wasm.min.js', 'text/javascript'],
   'selfie.json': ['server/models/selfie.json', 'application/json'],
   'selfie.bin': ['server/models/selfie.bin', 'application/octet-stream']
 };
+for (const suffix of ['', '-simd', '-threaded-simd']) {
+  const name = 'tfjs-backend-wasm' + suffix + '.wasm';
+  modelFiles[name] = ['node_modules/@tensorflow/tfjs-backend-wasm/dist/' + name, 'application/wasm'];
+}
 for (const [name, [source, type]] of Object.entries(modelFiles)) {
   const file = await readFile(new URL(source, root));
   assets['party-model/' + name] = [type, gzipSync(file).toString('base64'), 'gzip'];

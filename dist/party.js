@@ -694,7 +694,7 @@
         if (previous) previous.stop();
         else {
           const constraints = kind === 'video'
-            ? {video: {width: {ideal: 640}, height: {ideal: 360}, frameRate: {ideal: 24}}}
+            ? {video: {width: {ideal: 640}, height: {ideal: 360}, frameRate: {ideal: 30}}}
             : {audio: true};
           let stream;
           try {
