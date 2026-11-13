@@ -88,6 +88,7 @@
 </section>
 <p id="party-audience" class="party-status" hidden>You joined as an audience member. Live camera and mic seats are in use.</p>
 <p id="party-status" class="party-status" role="status"></p>
+<a id="party-open-browser" class="button outline compact" target="_blank" rel="noopener" hidden>Open room in browser</a>
 </section>
 <aside class="radio-side" aria-label="Room music">
 <div class="music-switch" role="group" aria-label="Room music mode">
@@ -111,15 +112,18 @@
 <p>Search for a song, then join the singer queue.</p></div>
 <section class="karaoke-youtube" aria-labelledby="youtube-karaoke-title">
   <h4 id="youtube-karaoke-title">Find a karaoke song</h4>
-  <form id="karaoke-search-form" action="https://www.youtube.com/results" target="_blank" rel="noopener">
+  <form id="karaoke-search-form" action="https://www.youtube.com/results">
     <label for="karaoke-search">Song or artist</label>
     <input id="karaoke-search" type="search" placeholder="e.g. Nelly Ride wit Me" maxlength="150" required>
       <input name="search_query" id="karaoke-search-query" type="hidden">
-    <button class="button primary" type="submit">Search</button>
+    <div class="actions">
+      <button class="button primary" type="submit">Search YouTube</button>
+      <button id="karaoke-search-in-room" class="button outline" type="submit" hidden>Search in room</button>
+    </div>
   </form>
   <p id="karaoke-search-status" role="status"></p>
   <div id="karaoke-search-results" class="karaoke-search-results"></div>
-  <a id="karaoke-youtube-search" class="catalog-link" target="_blank" rel="noopener" hidden>Open results on YouTube</a>
+  <a id="karaoke-youtube-search" class="catalog-link" hidden>Open results on YouTube</a>
   <div>
 
     <form id="karaoke-video-form">
@@ -174,6 +178,9 @@
 <button id="save-room" class="button outline compact" type="button">Save city</button>
 </div>
 <p id="deck-feedback" class="feedback" role="status"></p>
+<label id="room-link-fallback" hidden>Room link
+  <input id="room-link-value" type="url" readonly>
+</label>
 </aside>
 </div>
 </section>

@@ -129,10 +129,10 @@
   const results = el('karaoke-search-results');
   const searchStatus = el('karaoke-search-status');
   const searchLink = el('karaoke-youtube-search');
+  const inRoomButton = el('karaoke-search-in-room');
   let searchVersion = 0;
-  let inRoomSearch = false;
   fetch('/api/karaoke/search').then(response => response.json()).then(data => {
-    inRoomSearch = data.available === true;
+    inRoomButton.hidden = data.available !== true;
   }).catch(() => {});
 
   el('karaoke-search-form').addEventListener('submit', async event => {
@@ -151,8 +151,8 @@
     searchLink.href = url.href;
     searchLink.hidden = false;
     results.replaceChildren();
-    if (!inRoomSearch) {
-      searchStatus.textContent = 'In YouTube, tap Share and Copy link. Paste it below to select your song.';
+    if (event.submitter !== inRoomButton) {
+      searchStatus.textContent = 'Use Share → Copy link on YouTube, then return here and paste it below.';
       return;
     }
     event.preventDefault();
@@ -180,6 +180,15 @@
     } catch {
       if (version === searchVersion) searchStatus.textContent = 'Open the YouTube results, then paste your song’s Share link below.';
     }
+  });
+  // Restore the searched title and working link when a browser reloads after going Back.
+  window.addEventListener('pageshow', () => {
+    const query = search.value.trim();
+    if (!query || !searchLink.hidden) return;
+    const url = new URL('https://www.youtube.com/results');
+    url.searchParams.set('search_query', query + ' karaoke with lyrics');
+    searchLink.href = url.href;
+    searchLink.hidden = false;
   });
   search.addEventListener('input', () => search.setCustomValidity(''));
 

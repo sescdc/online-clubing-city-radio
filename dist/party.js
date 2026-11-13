@@ -7,6 +7,7 @@
   const controls = element('party-controls');
   const count = element('party-count');
   const status = element('party-status');
+  const openBrowser = element('party-open-browser');
   const kinds = {audio: element('party-mic'), video: element('party-camera')};
   const labels = {audio: 'Mic', video: 'Camera'};
   const meet = element('party-meet');
@@ -25,6 +26,37 @@
   let active = null;
   let attempt = 0;
   let joining = false;
+
+  function describeMediaError(kind, error) {
+    const device = labels[kind].toLowerCase();
+    const policy = document.permissionsPolicy ?? document.featurePolicy;
+    const permission = kind === 'video' ? 'camera' : 'microphone';
+    const embedded = window.self !== window.top;
+    const blockedByPreview = embedded && (policy?.allowsFeature?.(permission) === false
+      || !navigator.mediaDevices?.getUserMedia || error.name === 'NotAllowedError' || error.name === 'SecurityError');
+    if (blockedByPreview) {
+      openBrowser.href = location.href;
+      openBrowser.hidden = false;
+      return 'Open this room directly in your browser, then join again and tap ' + labels[kind] + ' to allow access.';
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      return 'Camera and mic access needs a supported browser on the secure site. Open Online Clubing in Safari, Chrome, Edge, or Firefox.';
+    }
+    switch (error.name) {
+      case 'NotAllowedError':
+      case 'SecurityError':
+        return 'Allow the ' + device + ' in this site’s browser settings, then tap ' + labels[kind] + ' again. On a phone or tablet, also check the browser’s device permissions.';
+      case 'NotFoundError':
+      case 'DevicesNotFoundError':
+        return 'No ' + device + ' was found. Connect or enable one, then try again.';
+      case 'NotReadableError':
+      case 'TrackStartError':
+      case 'AbortError':
+        return 'The ' + device + ' could not start. Close other apps or tabs using it and try again.';
+      default:
+        return 'Could not start the ' + device + '. Check that it’s enabled on your device and try again.';
+    }
+  }
 
   async function api(action, body) {
     const response = await fetch('/api/party/' + action, {
@@ -403,6 +435,7 @@
     form.hidden = false;
     join.disabled = false;
     status.textContent = message;
+    openBrowser.hidden = true;
   }
 
   function updateControls(session) {
@@ -464,6 +497,7 @@
       grid.hidden = controls.hidden = count.hidden = false;
       count.textContent = '1 guest';
       status.textContent = '';
+      openBrowser.hidden = true;
       updateControls(session);
       if (focusMic) kinds.audio.focus();
       void sync(session);
@@ -486,13 +520,24 @@
       session.pendingMedia.add(kind);
       const channel = session.channel;
       try {
+        openBrowser.hidden = true;
         const previous = session.tracks[kind];
         let track = null;
         if (previous) previous.stop();
         else {
-          const constraints = kind === 'video' ? {video: {width: {ideal: 640}, height: {ideal: 360}, frameRate: {ideal: 24}}} : {audio: true};
-          const stream = await navigator.mediaDevices.getUserMedia(constraints);
-          track = stream.getTracks()[0];
+          const constraints = kind === 'video'
+            ? {video: {width: {ideal: 640}, height: {ideal: 360}, frameRate: {ideal: 24}}}
+            : {audio: true};
+          let stream;
+          try {
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+          } catch (error) {
+            if (kind !== 'video' || !['OverconstrainedError', 'ConstraintNotSatisfiedError'].includes(error.name)
+              || active !== session || channel !== session.channel) throw error;
+            stream = await navigator.mediaDevices.getUserMedia({video: true});
+          }
+          [track] = kind === 'video' ? stream.getVideoTracks() : stream.getAudioTracks();
+          if (!track) throw new DOMException('No ' + kind + ' device track', 'NotFoundError');
           if (active !== session || channel !== session.channel || session.audienceOnly || (kind === 'audio' && micLocked(session))) {
             track.stop();
             return;
@@ -504,13 +549,16 @@
           });
         }
         session.tracks[kind] = track;
-        if (kind === 'video') session.view.video.srcObject = track ? new MediaStream([track]) : null;
+        if (kind === 'video') {
+          session.view.video.srcObject = track ? new MediaStream([track]) : null;
+          if (track) void session.view.video.play().catch(() => {});
+        }
         const changes = await Promise.allSettled([...session.peers.values()].flatMap(peer => peer.senders[kind]?.replaceTrack(track) ?? []));
         if (active !== session) return;
         status.textContent = changes.some(result => result.status === 'rejected') ? 'A guest could not receive your ' + labels[kind].toLowerCase() + '.' : '';
         updateControls(session);
-      } catch {
-        if (active === session) status.textContent = 'Could not access your ' + labels[kind].toLowerCase() + '. Check your browser permissions.';
+      } catch (error) {
+        if (active === session && channel === session.channel) status.textContent = describeMediaError(kind, error);
       } finally {
         session.pendingMedia.delete(kind);
         if (active === session) updateControls(session);

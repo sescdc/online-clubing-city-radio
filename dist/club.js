@@ -291,6 +291,7 @@ function openRoom(station, national, trigger = null, match = false) {
   byId('deck-title').textContent = match ? 'Bay Area vs. St. Louis' : national ? 'Coast to Coast' : station.city;
   byId('deck-info').textContent = national ? station.city + ' · ' + station.name : station.name;
   byId('deck-feedback').textContent = '';
+  byId('room-link-fallback').hidden = true;
   byId('station-link').href = station.url;
   updateSavedButton();
   deck.hidden = false;
@@ -375,9 +376,15 @@ byId('share-room').addEventListener('click', async () => {
   url.hash = 'radio-deck';
   try {
     await navigator.clipboard.writeText(url.href);
+    byId('room-link-fallback').hidden = true;
     byId('deck-feedback').textContent = 'Room link copied.';
   } catch {
-    window.prompt('Copy this room link', url.href);
+    const field = byId('room-link-value');
+    field.value = url.href;
+    byId('room-link-fallback').hidden = false;
+    byId('deck-feedback').textContent = 'Select and copy this room link.';
+    field.focus();
+    field.select();
   }
 });
 

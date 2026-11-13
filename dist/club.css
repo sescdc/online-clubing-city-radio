@@ -169,6 +169,9 @@ button.button,.filter {min-height:44px}
 .karaoke-search-results {display:grid;gap:6px;margin:8px 0}
 .karaoke-search-results button {white-space:normal;text-align:left;justify-content:flex-start}
 .karaoke-youtube #karaoke-video-form {margin-top:14px}
+#party-open-browser {margin:0 12px 12px}
+#room-link-fallback {display:grid;gap:4px}
+#room-link-value {width:100%;min-width:0;font-size:16px}
 @media(max-width:680px) {
   .karaoke-main-stage {grid-template-columns:minmax(0,1fr)}
   .karaoke-main-stage .party-tile {max-height:230px}
