@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#101013">
+<meta name="theme-color" content="#071a38">
 <meta name="description" content="Tune into local hip-hop and R&B radio or meet on one nationwide floor.">
 <title>Online Clubing | Hip-Hop Radio</title>
 <link rel="stylesheet" href="club.css">
@@ -54,8 +54,30 @@
   <button id="party-mic" class="button outline compact" type="button" aria-pressed="false">Mic off</button>
   <button id="party-camera" class="button outline compact" type="button" aria-pressed="false">Camera off</button>
   <button id="party-sound" class="button outline compact" type="button" hidden>Enable guest audio</button>
+  <button id="party-meet-toggle" class="button outline compact" type="button" aria-expanded="false" aria-controls="party-meet">Meet &amp; Greet</button>
+  <label class="party-backdrop" for="party-backdrop">Camera-off background
+    <select id="party-backdrop">
+      <option value="">Club default</option>
+      <option value="city">City lights</option>
+      <option value="wave">Blue wave</option>
+      <option value="sunset">Sunset</option>
+      <option value="studio">White studio</option>
+    </select>
+  </label>
   <button id="party-leave" class="button leave compact" type="button">Leave video</button>
 </div>
+<section id="party-meet" class="party-meet" aria-labelledby="party-meet-title" hidden>
+  <h3 id="party-meet-title">Meet &amp; Greet</h3>
+  <p id="party-meet-status" role="status"></p>
+  <div id="party-meet-actions" class="actions"></div>
+  <div id="meet-chat" class="meet-chat" hidden>
+    <ol id="meet-messages" aria-label="Private messages" aria-live="polite"></ol>
+    <form id="meet-form">
+      <label for="meet-message">Private message</label>
+      <div class="party-entry"><input id="meet-message" maxlength="500" required autocomplete="off"><button class="button primary">Send</button></div>
+    </form>
+  </div>
+</section>
 <p id="party-status" class="party-status" role="status"></p>
 </section>
 <aside class="radio-side" aria-label="Room music">

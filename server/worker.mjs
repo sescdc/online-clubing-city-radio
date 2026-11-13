@@ -8,6 +8,61 @@ function reply(body, status = 200) {
   return Response.json(body, {status, headers});
 }
 
+const backdrops = new Set(['city', 'wave', 'sunset', 'studio']);
+const inviteLifetime = 2 * 60_000;
+const meetingLifetime = 60 * 60_000;
+
+const activeMeeting = `SELECT m.id, m.host, m.guest FROM party_meetings m
+  JOIN party_members h ON h.id = m.host AND h.seen >= ?
+  JOIN party_members g ON g.id = m.guest AND g.seen >= ?
+  WHERE m.room = ? AND (m.host = ? OR m.guest = ?) AND m.accepted = 1 AND m.expires > ?`;
+
+async function updateMeeting(db, body, now, cutoff) {
+  const {room, id, action, target, invite} = body;
+  if (action === 'invite' && uuidPattern.test(target) && target !== id) {
+    const result = await db.prepare(`INSERT INTO party_meetings (id, room, host, guest, expires)
+      SELECT ?, ?, ?, ?, ? FROM party_members WHERE id = ? AND room = ? AND seen >= ?
+      AND NOT EXISTS (
+        SELECT 1 FROM party_meetings m
+        JOIN party_members h ON h.id = m.host AND h.seen >= ?
+        JOIN party_members g ON g.id = m.guest AND g.seen >= ?
+        WHERE m.room = ? AND m.expires > ?
+        AND (m.host IN (?, ?) OR m.guest IN (?, ?))
+      )`).bind(crypto.randomUUID(), room, id, target, now + inviteLifetime,
+        target, room, cutoff, cutoff, cutoff, room, now, id, target, id, target).run();
+    return result.meta.changes ? reply({}) : reply({error: 'That guest is no longer available for an invite.'}, 409);
+  }
+  if (!uuidPattern.test(invite)) return reply({error: 'Choose a valid invitation.'}, 400);
+  if (action === 'accept') {
+    const result = await db.prepare(`UPDATE party_meetings SET accepted = 1, expires = ?
+      WHERE id = ? AND room = ? AND guest = ? AND accepted = 0 AND expires > ?
+      AND EXISTS (SELECT 1 FROM party_members WHERE id = party_meetings.host AND seen >= ?)
+      AND NOT EXISTS (SELECT 1 FROM karaoke_turns k WHERE k.room = party_meetings.room
+        AND k.ends_at > ? AND k.performer_id IN (party_meetings.host, party_meetings.guest))`)
+      .bind(now + meetingLifetime, invite, room, id, now, cutoff, now).run();
+    return result.meta.changes ? reply({}) : reply({error: 'The invite is unavailable. A singer can join after their turn ends.'}, 409);
+  }
+  if (action === 'message') {
+    const message = typeof body.text === 'string' ? body.text.trim() : '';
+    if (!message || message.length > 500) return reply({error: 'Enter a message up to 500 characters.'}, 400);
+    const results = await db.batch([
+      db.prepare(`INSERT INTO party_meeting_messages (meeting, sender, text)
+        SELECT m.id, ?, ? FROM (${activeMeeting}) m WHERE m.id = ?`)
+        .bind(id, message, cutoff, cutoff, room, id, id, now, invite),
+      db.prepare(`DELETE FROM party_meeting_messages WHERE meeting = ?
+        AND id NOT IN (SELECT id FROM party_meeting_messages WHERE meeting = ? ORDER BY id DESC LIMIT 50)`)
+        .bind(invite, invite)
+    ]);
+    return results[0].meta.changes ? reply({}) : reply({error: 'This private room has ended.'}, 409);
+  }
+  if (action === 'dismiss') {
+    const result = await db.prepare('DELETE FROM party_meetings WHERE id = ? AND room = ? AND (host = ? OR guest = ?)')
+      .bind(invite, room, id, id).run();
+    return result.meta.changes ? reply({}) : reply({error: 'This invitation or meetup has already ended.'}, 409);
+  }
+  return reply({error: 'Unknown meeting action.'}, 400);
+}
+
 async function handleParty(request, env, path) {
   if (request.method !== 'POST') return reply({error: 'Method unavailable.'}, 405);
   if (request.headers.get('Origin') !== new URL(request.url).origin) {
@@ -31,19 +86,29 @@ async function handleParty(request, env, path) {
     const token = crypto.randomUUID();
     const results = await db.batch([
       db.prepare('DELETE FROM party_signals WHERE created < ?').bind(now - 90_000),
+      db.prepare('DELETE FROM party_meetings WHERE expires <= ?').bind(now),
       db.prepare('DELETE FROM party_members WHERE seen < ?').bind(cutoff),
       db.prepare(`INSERT INTO party_members (id, room, token, name, seen)
         SELECT ?, ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM party_members WHERE room = ? AND seen >= ?) < ?`)
         .bind(id, room, token, name, now, room, cutoff, maxGuests)
     ]);
-    return results[2].meta.changes ? reply({id, token}) : reply({error: 'This video room is full (6 guests).'}, 409);
+    let iceServers;
+    try {
+      const configured = JSON.parse(env.PARTY_ICE_SERVERS ?? 'null');
+      if (Array.isArray(configured)) iceServers = configured;
+    } catch { /* Use the default STUN server when no valid configuration is supplied. */ }
+    return results.at(-1).meta.changes ? reply({id, token, iceServers}) : reply({error: 'This video room is full (6 guests).'}, 409);
   }
 
   const {id, token} = body;
   if (!uuidPattern.test(id) || !uuidPattern.test(token)) return reply({error: 'Rejoin this room.'}, 401);
   if (path === '/api/party/leave') {
-    await db.prepare('DELETE FROM party_members WHERE room = ? AND id = ? AND token = ?')
-      .bind(room, id, token).run();
+    await db.batch([
+      db.prepare(`DELETE FROM party_meetings WHERE room = ? AND (host = ? OR guest = ?)
+        AND EXISTS (SELECT 1 FROM party_members WHERE room = ? AND id = ? AND token = ?)`)
+        .bind(room, id, id, room, id, token),
+      db.prepare('DELETE FROM party_members WHERE room = ? AND id = ? AND token = ?').bind(room, id, token)
+    ]);
     return reply({});
   }
 
@@ -51,31 +116,71 @@ async function handleParty(request, env, path) {
     .bind(room, id, token, cutoff).first();
   if (!member) return reply({error: 'Your connection expired. Rejoin the room.'}, 401);
 
-  const turn = await db.prepare('SELECT performer_id FROM karaoke_turns WHERE room = ? AND ends_at > ?')
+  if (path === '/api/party/meet') return updateMeeting(db, body, now, cutoff);
+
+  const meeting = await db.prepare(activeMeeting).bind(cutoff, cutoff, room, id, id, now).first();
+  const channel = meeting?.id ?? '';
+  const expectedChannel = typeof body.channel === 'string' ? body.channel : '';
+  const turn = !channel && await db.prepare('SELECT performer_id FROM karaoke_turns WHERE room = ? AND ends_at > ?')
     .bind(room, now).first();
   const singer = turn?.performer_id ?? null;
   const outgoing = Array.isArray(body.outgoing) ? body.outgoing : [];
   if (outgoing.length > 30) return reply({error: 'Too many connection messages.'}, 400);
   const statements = [
-    db.prepare('UPDATE party_members SET seen = ?, camera = ?, mic = ? WHERE id = ?')
-      .bind(now, Number(body.camera === true), Number(body.mic === true && (!singer || singer === id)), id)
+    db.prepare('UPDATE party_members SET seen = ?, camera = ?, mic = ?, backdrop = ? WHERE id = ?')
+      .bind(now, Number(channel === expectedChannel && body.camera === true),
+        Number(channel === expectedChannel && body.mic === true && (!singer || singer === id)), backdrops.has(body.backdrop) ? body.backdrop : '', id)
   ];
-  for (const message of outgoing) {
+  if (channel && channel !== expectedChannel) {
+    statements.push(db.prepare('DELETE FROM party_signals WHERE target = ? AND channel = ?').bind(id, ''));
+  }
+  for (const message of channel === expectedChannel ? outgoing : []) {
     if (!message || !uuidPattern.test(message.target) || !uuidPattern.test(message.nonce) || message.target === id) continue;
     if (!['offer', 'answer', 'ice'].includes(message.type)) continue;
     if (!message.data || typeof message.data !== 'object') continue;
-    statements.push(db.prepare(`INSERT OR IGNORE INTO party_signals (sender, target, nonce, payload, created)
-      SELECT ?, id, ?, ?, ? FROM party_members WHERE id = ? AND room = ? AND seen >= ?`)
-      .bind(id, message.nonce, JSON.stringify({type: message.type, data: message.data}), now, message.target, room, cutoff));
+    if (meeting && message.target !== (meeting.host === id ? meeting.guest : meeting.host)) continue;
+    statements.push(db.prepare(`INSERT OR IGNORE INTO party_signals (sender, target, nonce, payload, created, channel)
+      SELECT ?, id, ?, ?, ?, ? FROM party_members p WHERE id = ? AND room = ? AND seen >= ?
+        AND (? <> '' OR NOT EXISTS (
+          SELECT 1 FROM party_meetings m
+          JOIN party_members h ON h.id = m.host AND h.seen >= ?
+          JOIN party_members g ON g.id = m.guest AND g.seen >= ?
+          WHERE m.room = p.room AND m.accepted = 1 AND m.expires > ? AND p.id IN (m.host, m.guest)
+        ))`)
+      .bind(id, message.nonce, JSON.stringify({type: message.type, data: message.data}), now, channel,
+        message.target, room, cutoff, channel, cutoff, cutoff, now));
   }
   const cursor = Number.isSafeInteger(body.cursor) && body.cursor > 0 ? body.cursor : 0;
+  const members = meeting
+    ? db.prepare('SELECT id, name, camera, mic, backdrop FROM party_members WHERE id IN (?, ?) AND seen >= ?')
+        .bind(meeting.host, meeting.guest, cutoff)
+    : db.prepare(`SELECT p.id, p.name, p.camera, p.mic, p.backdrop FROM party_members p
+        WHERE p.room = ? AND p.seen >= ? AND NOT EXISTS (
+          SELECT 1 FROM party_meetings m
+          JOIN party_members h ON h.id = m.host AND h.seen >= ?
+          JOIN party_members g ON g.id = m.guest AND g.seen >= ?
+          WHERE m.room = p.room AND m.accepted = 1 AND m.expires > ? AND p.id IN (m.host, m.guest)
+        ) ORDER BY p.id`).bind(room, cutoff, cutoff, cutoff, now);
   statements.push(
-    db.prepare('DELETE FROM party_signals WHERE target = ? AND (id <= ? OR created < ?)').bind(id, cursor, now - 90_000),
-    db.prepare('SELECT id, name, camera, mic FROM party_members WHERE room = ? AND seen >= ? ORDER BY id').bind(room, cutoff),
-    db.prepare('SELECT id, sender, payload FROM party_signals WHERE target = ? AND id > ? ORDER BY id LIMIT 100').bind(id, cursor)
+    db.prepare('DELETE FROM party_signals WHERE target = ? AND (created < ? OR (channel = ? AND id <= ?))')
+      .bind(id, now - 90_000, expectedChannel, cursor),
+    members,
+    db.prepare(`SELECT id, sender, payload FROM party_signals
+      WHERE target = ? AND channel = ? AND id > ? ORDER BY id LIMIT 100`)
+      .bind(id, channel, channel === expectedChannel ? cursor : 0),
+    db.prepare(`SELECT m.id, m.host, h.name AS hostName, g.name AS guestName FROM party_meetings m
+      JOIN party_members h ON h.id = m.host AND h.seen >= ?
+      JOIN party_members g ON g.id = m.guest AND g.seen >= ?
+      WHERE m.room = ? AND (m.host = ? OR m.guest = ?) AND m.accepted = 0 AND m.expires > ?`)
+      .bind(cutoff, cutoff, room, id, id, now)
   );
   const results = await db.batch(statements);
-  return reply({members: results.at(-2).results, messages: results.at(-1).results, singer, now});
+  const chat = channel ? (await db.prepare(`SELECT id, sender, text FROM party_meeting_messages
+    WHERE meeting = ? ORDER BY id`).bind(channel).all()).results : [];
+  return reply({
+    chat, members: results.at(-3).results, messages: results.at(-2).results,
+    invite: results.at(-1).results[0] ?? null, channel, singer, now
+  });
 }
 
 const trackDuration = Object.freeze({'city-lights': 30_750, 'after-hours': 35_030});
@@ -128,7 +233,9 @@ async function handleKaraoke(request, env) {
       }
       const performer = await db.prepare('SELECT id FROM party_members WHERE room = ? AND id = ? AND token = ? AND seen >= ?')
         .bind(room, party.id, party.token, now - presenceWindow).first();
-      if (!performer) return reply({error: 'Rejoin the singer screen before starting your song.'}, 409);
+      const meeting = performer && await db.prepare(activeMeeting)
+        .bind(now - presenceWindow, now - presenceWindow, room, performer.id, performer.id, now).first();
+      if (!performer || meeting) return reply({error: 'Rejoin the singer screen before starting your song.'}, 409);
       const own = await db.prepare('SELECT track FROM karaoke_turns WHERE room = ? AND id = ? AND singer_key = ? AND started_at IS NULL')
         .bind(room, input.id, input.key).first();
       const duration = own && trackDuration[own.track];
@@ -136,8 +243,10 @@ async function handleKaraoke(request, env) {
       const result = await db.prepare(`UPDATE karaoke_turns SET started_at = ?, ends_at = ?, performer_id = ?
         WHERE room = ? AND id = ? AND singer_key = ? AND started_at IS NULL
           AND id = (SELECT MIN(id) FROM karaoke_turns WHERE room = ? AND started_at IS NULL AND created_at >= ?)
-          AND NOT EXISTS (SELECT 1 FROM karaoke_turns WHERE room = ? AND ends_at > ?)`)
-        .bind(now, now + duration, performer.id, room, input.id, input.key, room, cutoff, room, now).run();
+          AND NOT EXISTS (SELECT 1 FROM karaoke_turns WHERE room = ? AND ends_at > ?)
+          AND NOT EXISTS (${activeMeeting})`)
+        .bind(now, now + duration, performer.id, room, input.id, input.key, room, cutoff, room, now,
+          now - presenceWindow, now - presenceWindow, room, performer.id, performer.id, now).run();
       if (!result.meta.changes) return reply({error: 'Wait until the singer list shows you are up next.'}, 409);
     } else {
       return reply({error: 'Unknown karaoke action.'}, 400);
@@ -164,7 +273,7 @@ export default {
         return reply({error: 'The karaoke stage is temporarily unavailable.'}, 503);
       }
     }
-    if (['/api/party/join', '/api/party/sync', '/api/party/leave'].includes(path)) {
+    if (['/api/party/join', '/api/party/sync', '/api/party/leave', '/api/party/meet'].includes(path)) {
       try { return await handleParty(request, env, path); }
       catch (error) {
         console.error('Party request failed', path, error.message);

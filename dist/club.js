@@ -44,7 +44,7 @@ const stationRows = [
   ['fresno','Fresno','FRE','West','B95','b95-141'],
   ['cin','Cincinnati','CIN','Midwest','101.1 The Wiz','1011-the-wiz-8946'],
 ];
-const colors = {West:'#7ce9e0', Northeast:'#c6a7ff', South:'#ffb585', Midwest:'#e7ff66'};
+const colors = {West:'#84c1ff', Northeast:'#b2d8ff', South:'#ffb176', Midwest:'#ff9a53'};
 const streamOverrides = {
   phx:'https://ice42.securenetsystems.net/KZCE',
   den:'https://live.amperwave.net/direct/audacy-kqksfmaac-imc',
@@ -306,6 +306,20 @@ function openRoom(station, national, trigger = null, match = false) {
     byId('deck-title').focus({preventScroll:true});
   }
 }
+
+window.addEventListener('club-meeting', event => {
+  deck.classList.toggle('meeting-mode', event.detail);
+  byId('party-screen-title').textContent = event.detail ? 'Private Meet & Greet'
+    : musicMode === 'karaoke' ? 'Singer screen' : 'Video party';
+  if (!current) return;
+  if (event.detail) {
+    stopRadio();
+    window.clubKaraoke.stop();
+    window.clubStage.close();
+  } else {
+    setMusicMode(musicMode);
+  }
+});
 
 byId('mode-radio').addEventListener('click', () => {
   if (musicMode !== 'radio') setMusicMode('radio', !current.national && !current.match);

@@ -9,6 +9,16 @@
   const status = element('party-status');
   const kinds = {audio: element('party-mic'), video: element('party-camera')};
   const labels = {audio: 'Mic', video: 'Camera'};
+  const meet = element('party-meet');
+  const meetToggle = element('party-meet-toggle');
+  const meetStatus = element('party-meet-status');
+  const meetActions = element('party-meet-actions');
+  const chat = element('meet-chat');
+  const chatMessages = element('meet-messages');
+  const chatForm = element('meet-form');
+  const chatInput = element('meet-message');
+  const chatSend = chatForm.querySelector('button');
+  const backdrop = element('party-backdrop');
   let room = null;
   let active = null;
   let attempt = 0;
@@ -38,6 +48,7 @@
     video.autoplay = true;
     video.playsInline = true;
     video.muted = local;
+    video.setAttribute('playsinline', '');
     video.className = local ? 'self' : '';
     const tag = document.createElement('span');
     tag.className = 'party-tag';
@@ -49,6 +60,7 @@
   function updateTile(view, member, local) {
     view.tag.textContent = member.name + (local ? ' (you)' : '') + (member.mic ? '' : ' · muted');
     view.video.classList.toggle('camera-off', !member.camera);
+    view.card.dataset.backdrop = member.backdrop ?? '';
   }
 
   function identity(session) {
@@ -61,7 +73,7 @@
 
   function connection(session, member) {
     const pc = new RTCPeerConnection({
-      iceServers: [{urls: 'stun:stun.l.google.com:19302'}]
+      iceServers: session.iceServers ?? [{urls: 'stun:stun.l.google.com:19302'}]
     });
     const view = tile(member, false);
     const stream = new MediaStream();
@@ -81,7 +93,7 @@
       });
     };
     pc.onicecandidate = event => {
-      if (!event.candidate || active !== session) return;
+      if (!event.candidate || active !== session || session.peers.get(member.id)?.pc !== pc) return;
       const candidate = event.candidate.toJSON();
       if (peer.descriptionQueued) queue(session, member.id, 'ice', candidate);
       else peer.localIce.push(candidate);
@@ -158,18 +170,138 @@
     }
   }
 
+  function clearPeers(session) {
+    for (const peer of session.peers.values()) {
+      peer.pc.close();
+      peer.view.video.srcObject = null;
+      peer.view.card.remove();
+    }
+    session.peers.clear();
+  }
+
+  function switchChannel(session, channel) {
+    if (session.channel === channel) return;
+    clearPeers(session);
+    session.channel = channel;
+    chatInput.value = '';
+    chatMessages.replaceChildren();
+    session.chatLast = null;
+    chat.hidden = !channel;
+    session.cursor = 0;
+    session.outgoing = [];
+    // Restart muted and with the camera off at both privacy boundaries.
+    for (const track of Object.values(session.tracks)) track?.stop();
+    session.tracks = {};
+    session.view.video.srcObject = null;
+    element('party-sound').hidden = true;
+    updateControls(session);
+    window.dispatchEvent(new CustomEvent('club-meeting', {detail: Boolean(channel)}));
+    if (channel) showMeet(session, true);
+  }
+
+  function showMeet(session, open) {
+    session.meetOpen = open;
+    meet.hidden = !open;
+    meetToggle.setAttribute('aria-expanded', String(open));
+  }
+
+  function renderMeet(session) {
+    const invite = session.invite;
+    const otherGuests = session.members.filter(member => member.id !== session.id);
+    const state = JSON.stringify([session.channel, invite, otherGuests.map(({id, name}) => [id, name]), session.meetBusy, session.meetError]);
+    if (session.meetState === state) return;
+    session.meetState = state;
+    meetActions.replaceChildren();
+    function action(label, name, details, primary = false) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'button compact ' + (primary ? 'primary' : 'outline');
+      button.textContent = label;
+      button.disabled = session.meetBusy;
+      button.addEventListener('click', async () => {
+        session.meetBusy = true;
+        session.meetError = '';
+        // Keep focus on the chosen control until the server returns.
+        button.disabled = true;
+        try { await api('meet', {...identity(session), action: name, ...details}); }
+        catch (error) { session.meetError = error.message || 'Try again.'; }
+        finally {
+          session.meetBusy = false;
+          if (active === session) {
+            session.meetState = null;
+            renderMeet(session);
+          }
+        }
+      });
+      meetActions.append(button);
+    }
+    if (session.channel) {
+      meetStatus.textContent = 'Private room with ' + (otherGuests[0]?.name ?? 'your guest') + '. Turn on your mic or camera when ready.';
+      action('Return to party', 'dismiss', {invite: session.channel}, true);
+    } else if (invite) {
+      const incoming = invite.host !== session.id;
+      meetStatus.textContent = incoming ? invite.hostName + ' invited you to Meet & Greet.'
+        : 'Waiting for ' + invite.guestName + ' to accept.';
+      if (incoming) action('Accept invite', 'accept', {invite: invite.id}, true);
+      action(incoming ? 'Decline invite' : 'Cancel invite', 'dismiss', {invite: invite.id});
+    } else {
+      meetStatus.textContent = otherGuests.length ? 'Invite a guest from this party.' : 'Wait for another guest to join the party.';
+      for (const member of otherGuests) action('Invite ' + member.name, 'invite', {target: member.id});
+    }
+    if (session.meetError) meetStatus.textContent += ' ' + session.meetError;
+  }
+
+  function renderChat(session, messages) {
+    const latest = messages.at(-1)?.id ?? null;
+    if (session.chatLast === latest) return;
+    session.chatLast = latest;
+    const guest = session.members.find(member => member.id !== session.id);
+    chatMessages.replaceChildren(...messages.map(message => {
+      const row = document.createElement('li');
+      const name = document.createElement('strong');
+      name.textContent = message.sender === session.id ? 'You' : guest?.name ?? 'Guest';
+      row.append(name, document.createTextNode(' ' + message.text));
+      return row;
+    }));
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  chatForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const session = active;
+    const message = chatInput.value.trim();
+    if (!session?.channel || !message || chatSend.disabled) return;
+    chatSend.disabled = true;
+    try {
+      await api('meet', {...identity(session), action: 'message', invite: session.channel, text: message});
+      if (chatInput.value.trim() === message) chatInput.value = '';
+    } catch (error) {
+      if (active === session) status.textContent = error.message || 'Could not send your message.';
+    } finally {
+      chatSend.disabled = false;
+    }
+  });
+
   async function sync(session) {
     const outgoing = session.outgoing.slice(0, 30);
     try {
       const data = await api('sync', {
-        ...identity(session), cursor: session.cursor, outgoing,
+        ...identity(session), cursor: session.cursor, outgoing, channel: session.channel,
+        backdrop: backdrop.value,
         camera: Boolean(session.tracks.video), mic: Boolean(session.tracks.audio)
       });
       if (active !== session) return;
       if (session.retrying) status.textContent = '';
       session.retrying = false;
+      const nextChannel = data.channel ?? '';
+      if (nextChannel === session.channel) session.outgoing.splice(0, outgoing.length);
+      else switchChannel(session, nextChannel);
       applySinger(session, data.singer ?? null, data.now ?? 0);
-      session.outgoing.splice(0, outgoing.length);
+      if (data.invite?.id !== session.invite?.id && data.invite?.host !== session.id && data.invite) showMeet(session, true);
+      session.invite = data.invite;
+      session.members = data.members;
+      renderMeet(session);
+      if (session.channel) renderChat(session, data.chat ?? []);
       count.textContent = data.members.length + (data.members.length === 1 ? ' guest' : ' guests');
       const members = new Set(data.members.map(member => member.id));
       for (const [id, peer] of session.peers) {
@@ -217,12 +349,19 @@
     if (session) {
       clearTimeout(session.timer);
       for (const track of Object.values(session.tracks)) track?.stop();
-      for (const {pc} of session.peers.values()) pc.close();
+      clearPeers(session);
+      if (session.channel) window.dispatchEvent(new CustomEvent('club-meeting', {detail: false}));
       void api('leave', identity(session)).catch(() => {});
     }
     grid.replaceChildren();
     grid.hidden = controls.hidden = count.hidden = true;
     element('party-sound').hidden = true;
+    meet.hidden = true;
+    meetToggle.setAttribute('aria-expanded', 'false');
+    meetActions.replaceChildren();
+    chat.hidden = true;
+    chatInput.value = '';
+    chatMessages.replaceChildren();
     form.hidden = false;
     join.disabled = false;
     status.textContent = message;
@@ -234,10 +373,11 @@
       button.setAttribute('aria-pressed', String(on));
       button.textContent = labels[kind] + (on ? ' on' : ' off');
     }
-    kinds.audio.disabled = micLocked(session);
+    kinds.audio.disabled = micLocked(session) || session.pendingMedia.has('audio');
+    kinds.video.disabled = session.pendingMedia.has('video');
     if (micLocked(session)) kinds.audio.textContent = 'Mic locked for singer';
     session.view.card.classList.toggle('party-singing', session.singer === session.id);
-    updateTile(session.view, {name: session.name, camera: session.tracks.video, mic: session.tracks.audio}, true);
+    updateTile(session.view, {name: session.name, camera: session.tracks.video, mic: session.tracks.audio, backdrop: backdrop.value}, true);
   }
 
   form.addEventListener('submit', async event => {
@@ -264,7 +404,7 @@
         return;
       }
       const view = tile({name: displayName}, true);
-      const session = {...ticket, room: selected, name: displayName, view, tracks: {}, peers: new Map(), outgoing: [], cursor: 0};
+      const session = {...ticket, room: selected, name: displayName, view, tracks: {}, peers: new Map(), outgoing: [], cursor: 0, channel: '', members: [], pendingMedia: new Set()};
       active = session;
       const singerName = element('singer-name');
       if (!singerName.value) singerName.value = displayName;
@@ -287,6 +427,8 @@
       const session = active;
       if (!session || (kind === 'audio' && micLocked(session))) return;
       button.disabled = true;
+      session.pendingMedia.add(kind);
+      const channel = session.channel;
       try {
         const previous = session.tracks[kind];
         let track = null;
@@ -295,7 +437,7 @@
           const constraints = kind === 'video' ? {video: {width: {ideal: 640}, height: {ideal: 360}, frameRate: {ideal: 24}}} : {audio: true};
           const stream = await navigator.mediaDevices.getUserMedia(constraints);
           track = stream.getTracks()[0];
-          if (active !== session || (kind === 'audio' && micLocked(session))) {
+          if (active !== session || channel !== session.channel || (kind === 'audio' && micLocked(session))) {
             track.stop();
             return;
           }
@@ -314,11 +456,18 @@
       } catch {
         if (active === session) status.textContent = 'Could not access your ' + labels[kind].toLowerCase() + '. Check your browser permissions.';
       } finally {
-        button.disabled = kind === 'audio' && active === session && micLocked(session);
+        session.pendingMedia.delete(kind);
+        if (active === session) button.disabled = kind === 'audio' && micLocked(session);
       }
     });
   }
 
+  meetToggle.addEventListener('click', () => {
+    if (active) showMeet(active, !active.meetOpen);
+  });
+  backdrop.addEventListener('change', () => {
+    if (active) updateControls(active);
+  });
   element('party-sound').addEventListener('click', () => {
     if (!active) return;
     for (const {view} of active.peers.values()) void view.video.play().catch(() => {});
@@ -332,7 +481,7 @@
   window.clubParty = {
     identity() { return active ? identity(active) : null; },
     singer(nextRoom, id, time) {
-      if (active?.room === nextRoom) applySinger(active, id, time);
+      if (active?.room === nextRoom && !active.channel) applySinger(active, id, time);
     },
     select(next) {
       if (next === room) return;
