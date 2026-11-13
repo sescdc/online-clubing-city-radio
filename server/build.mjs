@@ -7,7 +7,6 @@ const assetTypes = {
   'karaoke.js': 'text/javascript; charset=utf-8',
   'party.js': 'text/javascript; charset=utf-8',
   'club.css': 'text/css; charset=utf-8',
-  'karafun-catalog.json.gz': 'application/gzip',
   'karaoke-city-lights.mp3': 'audio/mpeg',
   'karaoke-after-hours.mp3': 'audio/mpeg',
   'hero.webp': 'image/webp'

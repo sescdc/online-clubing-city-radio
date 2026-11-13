@@ -21,107 +21,34 @@
       ]
     }
   ];
-  const mobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
-    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  const appDownload = /Android/i.test(navigator.userAgent)
-    ? 'https://www.karafun.com/download/'
-    : 'https://apps.apple.com/app/apple-store/id431050674?platform=iphone';
   const el = id => document.getElementById(id);
-  const input = el('karaoke-search');
-  const songs = el('karaoke-songs');
-  const queue = el('karaoke-queue');
-  let room = null;
-  let active = null;
+  const search = el('karaoke-search');
+  const videoLink = el('karaoke-youtube-link');
+  const videoStatus = el('karaoke-video-status');
   let nativeAudio = null;
   let playbackToken = 0;
   const playbackStatus = el('karaoke-playback');
-  const setlists = new Map();
-  const pageSize = 30;
-  const genre = el('karafun-genre');
-  const more = el('karafun-more');
-  let karaFunSongs = null;
-  let catalogRequest = null;
-  let visibleCount = pageSize;
 
-  function normalize(text) {
-    return text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
-      .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-  }
-
-  function karaFunURL(id) {
-    const url = new URL('https://www.karafun.com/web/');
-    url.searchParams.set('song', id);
-    return url.href;
-  }
-
-  function openLink(url) {
-    const link = document.createElement('a');
-    link.href = url;
-    link.target = '_blank';
-    link.rel = 'noopener';
-    return link;
-  }
-
-  async function loadKaraFun() {
-    const status = el('karafun-results');
-    status.textContent = 'Loading the KaraFun catalog…';
-    catalogRequest = fetch('karafun-catalog.json.gz');
+  function youtubeVideoId(value) {
     try {
-      const response = await catalogRequest;
-      if (!response.ok) throw new Error('Catalog unavailable');
-      const json = await new Response(response.body.pipeThrough(new DecompressionStream('gzip'))).json();
-      karaFunSongs = json.map(([id, title, artist, styles, duet]) => ({
-        id, title, artist, duet,
-        search: normalize(title + ' ' + artist),
-        urban: /(?:^|,)(?:Hip-Hop|Rap|R&B|Soul)(?:,|$)/.test(styles)
-      }));
-      renderSongs();
+      const url = new URL(value);
+      if (!['https:', 'http:'].includes(url.protocol)) return null;
+      const parts = url.pathname.split('/').filter(Boolean);
+      let id;
+      if (url.hostname === 'youtu.be') {
+        id = parts[0];
+      } else if (['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com'].includes(url.hostname)) {
+        if (url.pathname === '/watch') id = url.searchParams.get('v');
+        else if (['shorts', 'live', 'embed'].includes(parts[0])) id = parts[1];
+      }
+      return /^[A-Za-z0-9_-]{11}$/.test(id ?? '') ? id : null;
     } catch {
-      status.textContent = 'Catalog unavailable. Try again or open KaraFun below.';
-    } finally {
-      catalogRequest = null;
+      return null;
     }
-  }
-
-  function addToSetlist(song) {
-    const list = setlists.get(room);
-    const alreadyAdded = list.includes(song);
-    const add = button(alreadyAdded ? 'Added' : 'Add', 'Add ' + song.title + ' to my setlist', () => {
-      list.push(song);
-      el('karaoke-status').textContent = song.title + ' added to your setlist.';
-      add.textContent = 'Added';
-      add.disabled = true;
-      renderQueue();
-    });
-    add.disabled = alreadyAdded;
-    return add;
-  }
-
-  function renderSongs() {
-    if (!karaFunSongs) {
-      songs.replaceChildren();
-      return;
-    }
-    const terms = normalize(input.value).split(' ').filter(Boolean);
-    const filter = genre.value;
-    const results = karaFunSongs.filter(song => (filter !== 'urban' || song.urban)
-      && (filter !== 'duet' || song.duet) && terms.every(term => song.search.includes(term)));
-    const shown = results.slice(0, visibleCount);
-    el('karafun-results').textContent = results.length
-      ? 'Showing ' + shown.length + ' of ' + results.length.toLocaleString() + ' songs'
-      : 'No songs match your search.';
-    more.hidden = shown.length >= results.length;
-    songs.replaceChildren(...shown.map(song => {
-      const row = document.createElement('div');
-      row.className = 'karaoke-row';
-      row.append(trackControl(song, song.artist), addToSetlist(song));
-      return row;
-    }));
   }
 
   function stop() {
     playbackToken += 1;
-    active = null;
     if (nativeAudio) {
       nativeAudio.pause();
       nativeAudio.removeAttribute('src');
@@ -164,6 +91,7 @@
       if (token !== playbackToken) return;
       const link = el('karaoke-download');
       link.href = song.audio;
+      link.textContent = 'Open backing track';
       link.hidden = false;
       playbackStatus.textContent = 'The player could not load this track. Open the audio directly.';
     }
@@ -178,11 +106,10 @@
     });
   }
 
-  function showStage(song, closeLabel = 'Stop') {
+  function showStage(title, closeLabel = 'Stop') {
     stop();
-    active = song;
     el('karaoke-stop').textContent = closeLabel;
-    el('karaoke-track').textContent = song.title + ' · ' + song.artist;
+    el('karaoke-track').textContent = title;
     el('karaoke-stage').hidden = false;
   }
 
@@ -191,154 +118,67 @@
     el('karaoke-stop').focus({preventScroll: true});
   }
 
-  function showMobileSong(song) {
-    showStage(song, 'Close');
-    const searchText = song.title + ' ' + song.artist;
-    const guide = document.createElement('p');
-    guide.textContent = 'Copy the song, then paste it into Search in the KaraFun app.';
-    const searchValue = document.createElement('input');
-    searchValue.className = 'karaoke-copy-field';
-    searchValue.value = searchText;
-    searchValue.readOnly = true;
-    searchValue.setAttribute('aria-label', 'Song title and artist to copy');
-    const copy = button('Copy song', 'Copy song title and artist', async () => {
-      try {
-        await navigator.clipboard.writeText(searchText);
-        if (active === song) playbackStatus.textContent = 'Copied. Paste it into Search in KaraFun.';
-      } catch {
-        if (active !== song) return;
-        searchValue.focus();
-        searchValue.select();
-        playbackStatus.textContent = 'Touch and hold the selected text to copy it.';
-      }
-    });
-    const download = openLink(appDownload);
-    download.className = 'catalog-link';
-    download.textContent = 'Get the KaraFun app';
-    const actions = document.createElement('div');
-    actions.className = 'karaoke-copy-actions';
-    actions.append(copy, download);
-    el('karaoke-video').append(guide, searchValue, actions);
+  function playYouTube(id) {
+    window.clubStage.mute();
+    showStage('YouTube karaoke', 'Close video');
+    const player = document.createElement('iframe');
+    player.className = 'karaoke-youtube-player';
+    player.title = 'YouTube karaoke video';
+    player.src = 'https://www.youtube-nocookie.com/embed/' + id + '?playsinline=1';
+    player.allow = 'encrypted-media; fullscreen; picture-in-picture';
+    player.allowFullscreen = true;
+    player.referrerPolicy = 'strict-origin-when-cross-origin';
+    el('karaoke-video').append(player);
+    playbackStatus.textContent = 'Tap play to sing along on this device.';
+    const link = el('karaoke-download');
+    link.href = 'https://www.youtube.com/watch?v=' + id;
+    link.textContent = 'Watch on YouTube';
+    link.hidden = false;
     focusStage();
   }
 
   function play(song) {
     window.clubStage.mute();
-    showStage(song);
+    showStage(song.title + ' · ' + song.artist);
     playbackStatus.textContent = 'Loading backing track…';
     playOriginal(song, playbackToken);
     focusStage();
   }
 
-  function trackControl(song, detail) {
-    const id = song.id;
-    let control;
-    let action;
-    if (!mobileDevice) {
-      control = openLink(karaFunURL(id));
-      control.addEventListener('click', () => {
-        if (!active) return;
-        stop();
-        setTimeout(() => {
-          if (!active) {
-            renderSongs();
-            renderQueue();
-          }
-        }, 0);
-      });
-      action = 'Play on KaraFun';
-    } else {
-      control = document.createElement('button');
-      control.type = 'button';
-      control.addEventListener('click', () => showMobileSong(song));
-      action = 'Open options';
-      control.setAttribute('aria-pressed', String(song === active));
+  el('karaoke-search-form').addEventListener('submit', event => {
+    const query = search.value.trim();
+    if (!query) {
+      event.preventDefault();
+      search.setCustomValidity('Enter a song or artist.');
+      search.reportValidity();
+      return;
     }
-    control.className = 'karaoke-track-control';
-    const info = document.createElement('span');
-    const title = document.createElement('strong');
-    title.textContent = song.title;
-    const artist = document.createElement('small');
-    artist.textContent = detail;
-    info.append(title, artist);
-    const indicator = document.createElement('span');
-    indicator.className = 'karaoke-track-action';
-    indicator.textContent = action;
-    control.append(info, indicator);
-    return control;
-  }
-
-  function button(text, label, action) {
-    const control = document.createElement('button');
-    control.type = 'button';
-    control.className = 'button outline compact';
-    control.textContent = text;
-    control.setAttribute('aria-label', label);
-    control.addEventListener('click', action);
-    return control;
-  }
-
-  function renderQueue() {
-    const list = setlists.get(room);
-    el('karaoke-empty').hidden = list.length > 0;
-    queue.replaceChildren(...list.map((song, index) => {
-      const item = document.createElement('li');
-      const row = document.createElement('div');
-      row.className = 'karaoke-row';
-      row.append(trackControl(song, song.artist),
-        button('Remove', 'Remove ' + song.title + ' from my setlist', () => {
-          list.splice(index, 1);
-          el('karaoke-status').textContent = song.title + ' removed.';
-          renderQueue();
-          renderSongs();
-        }));
-      item.append(row);
-      return item;
-    }));
-  }
-
-  input.addEventListener('input', () => {
-    visibleCount = pageSize;
-    renderSongs();
+    el('karaoke-search-query').value = query + ' karaoke with lyrics';
   });
-  genre.addEventListener('change', () => {
-    visibleCount = pageSize;
-    renderSongs();
-  });
-  more.addEventListener('click', () => {
-    const oldCount = visibleCount;
-    visibleCount += pageSize;
-    renderSongs();
-    songs.children[oldCount]?.querySelector('.karaoke-track-control')?.focus();
-  });
-  const catalog = el('karaoke-solo');
-  catalog.addEventListener('toggle', () => {
-    if (!catalog.open || !room) return;
-    if (karaFunSongs) renderSongs();
-    else if (!catalogRequest) loadKaraFun();
+  search.addEventListener('input', () => search.setCustomValidity(''));
+
+  el('karaoke-video-form').addEventListener('submit', event => {
+    event.preventDefault();
+    const id = youtubeVideoId(videoLink.value.trim());
+    videoStatus.textContent = id ? '' : 'Paste a YouTube video link, such as a link from Share.';
+    if (id) playYouTube(id);
+    else videoLink.focus();
   });
   el('karaoke-stop').addEventListener('click', () => {
+    const returnTo = el('karaoke-video').querySelector('iframe') ? videoLink : el('singer-practice');
     stop();
-    renderSongs();
-    const returnTo = catalog.open ? input : el('singer-practice');
-    if (returnTo.getClientRects().length) returnTo.focus({preventScroll:true});
+    if (returnTo.getClientRects().length) returnTo.focus({preventScroll: true});
   });
 
   window.clubKaraoke = {
     originals,
-    open(key) {
+    open() {
       stop();
-      room = key;
-      if (!setlists.has(key)) setlists.set(key, []);
-      genre.value = 'all';
-      el('karaoke-status').textContent = '';
-      input.value = '';
-      visibleCount = pageSize;
-      catalog.open = false;
-      more.hidden = true;
-      songs.replaceChildren();
-      el('karafun-results').textContent = '';
-      renderQueue();
+      search.value = '';
+      search.setCustomValidity('');
+      videoLink.value = '';
+      videoStatus.textContent = '';
+      el('karaoke-solo').open = false;
     },
     stop,
     practice: play

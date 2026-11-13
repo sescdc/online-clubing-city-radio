@@ -99,10 +99,28 @@
 </div>
 <section id="karaoke-panel" class="karaoke" aria-labelledby="karaoke-title" hidden>
 <div class="karaoke-heading"><h3 id="karaoke-title">Karaoke</h3>
-<p>Choose a song and join the queue, or practice on your own.</p></div>
+<p>Find a karaoke video on YouTube, or join the shared stage with a club song.</p></div>
+<section class="karaoke-youtube" aria-labelledby="youtube-karaoke-title">
+  <h4 id="youtube-karaoke-title">YouTube karaoke</h4>
+  <form id="karaoke-search-form" action="https://www.youtube.com/results" target="_blank" rel="noopener">
+    <label for="karaoke-search">Song or artist</label>
+    <input id="karaoke-search" type="search" placeholder="e.g. Nelly Ride wit Me" maxlength="150" required>
+    <input id="karaoke-search-query" name="search_query" type="hidden">
+    <button class="button primary" type="submit">Search YouTube karaoke</button>
+  </form>
+  <details id="karaoke-solo">
+    <summary>Play a YouTube link here</summary>
+    <form id="karaoke-video-form">
+      <label for="karaoke-youtube-link">YouTube video link</label>
+      <input id="karaoke-youtube-link" type="url" placeholder="Paste a link from YouTube" required>
+      <button class="button outline" type="submit">Load video</button>
+    </form>
+    <p id="karaoke-video-status" class="feedback" role="status"></p>
+  </details>
+</section>
 <div id="singer-signup" class="singer-signup">
   <form id="singer-form">
-    <label for="singer-song">Song</label><select id="singer-song" name="song" required></select>
+    <label for="singer-song">Shared stage song</label><select id="singer-song" name="song" required></select>
     <label id="singer-name-label" for="singer-name">Your name</label><input id="singer-name" name="name" maxlength="32" autocomplete="nickname" required>
     <div class="actions singer-actions">
       <button id="singer-submit" class="button primary" type="submit">Join queue</button>
@@ -135,21 +153,6 @@
 <p id="karaoke-playback" class="karaoke-playback" role="status"></p>
 <a id="karaoke-download" target="_blank" rel="noopener" class="catalog-link" hidden>Open backing track</a>
 </div>
-<details class="karaoke-solo" id="karaoke-solo">
-<summary>Browse KaraFun songs</summary>
-<p>Catalog songs play in KaraFun. The shared stage uses the songs above.</p>
-<label class="search karaoke-search"><span class="search-icon" aria-hidden="true"></span><input id="karaoke-search" type="search" placeholder="Find a song or artist" aria-label="Find a song or artist"></label>
-<div id="karafun-tools" class="karafun-tools">
-<label for="karafun-genre">Genre</label>
-<select id="karafun-genre"><option value="all">All genres</option><option value="urban">Hip-hop &amp; R&amp;B</option><option value="duet">Duets</option></select>
-<p id="karafun-results" role="status"></p>
-</div>
-<div id="karaoke-songs" class="karaoke-list"></div>
-<button id="karafun-more" class="button outline compact" type="button" hidden>Show more songs</button>
-<a id="karaoke-browse" class="catalog-link" href="https://www.karafun.com/karaoke/" target="_blank" rel="noopener">Open catalog on KaraFun</a>
-<div class="karaoke-queue"><h4>My setlist</h4><p id="karaoke-empty">Save songs to find them again during this visit.</p><ol id="karaoke-queue"></ol></div>
-<p class="feedback" id="karaoke-status" role="status"></p>
-</details>
 </section>
 <div class="actions room-actions">
 <button id="share-room" class="button outline compact" type="button">Copy room link</button>
