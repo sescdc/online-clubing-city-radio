@@ -192,3 +192,5 @@ button.button,.filter {min-height:44px}
   .karaoke-main-stage .party-tile {max-height:230px}
   .karaoke-mode .party-grid .party-tile {width:105px}
 }
+
+.party-camera-source {position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:.01;pointer-events:none}

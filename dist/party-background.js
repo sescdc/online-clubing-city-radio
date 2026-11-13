@@ -19,11 +19,8 @@
     modelPromise ??= (async () => {
       if (!window.tf) await loadScript('tf.min.js');
       if (!window['body-pix']) await loadScript('body-pix.min.js');
-      // The CPU backend also works when WebGL is unavailable.
-      const graphics = document.createElement('canvas');
-      const gl = graphics.getContext('webgl2') || graphics.getContext('webgl');
-      gl?.getExtension('WEBGL_lose_context')?.loseContext();
-      if (!gl || !await tf.setBackend('webgl')) await tf.setBackend('cpu');
+      // Use the CPU backend so the effect also works without WebGL.
+      await tf.setBackend('cpu');
       return window['body-pix'].load({architecture: 'MobileNetV1', outputStride: 16, multiplier: .5,
         quantBytes: 2, modelUrl: modelPath + 'bodypix.json'});
     })().catch(error => {
@@ -61,10 +58,11 @@
     if (image) drawCover(context, image, width, height);
   }
 
-  window.createPartyVideoBackground = (camera, onError) => {
+  window.createPartyVideoBackground = (camera, onState, onError) => {
     const video = document.createElement('video');
     video.muted = video.playsInline = true;
-    video.srcObject = new MediaStream([camera]);
+    video.setAttribute('aria-hidden', 'true');
+    video.className = 'party-camera-source';
 
     const settings = camera.getSettings();
     const portrait = settings.height > settings.width;
@@ -79,12 +77,17 @@
     const sceneContext = scene.getContext('2d');
     if (!context || !sceneContext || !canvas.captureStream) throw new Error('Video backgrounds are unavailable.');
     const [track] = canvas.captureStream(24).getVideoTracks();
+    video.srcObject = new MediaStream([camera]);
+    document.body.append(video);
     let stopped = false;
     let timer;
     let sceneVersion = 0;
     let sceneReady = false;
     let lastTime = -1;
     let lastPerson = 0;
+    let previousState;
+    let model;
+    let framed = false;
     let resolveFirstFrame;
     const firstFrame = new Promise(resolve => { resolveFirstFrame = resolve; });
     const input = document.createElement('canvas');
@@ -101,12 +104,32 @@
     foreground.height = height;
     const foregroundContext = foreground.getContext('2d');
 
+    function report(state) {
+      if (previousState === state) return;
+      previousState = state;
+      onState(state);
+    }
+
     async function drawFrame(model) {
       if (!sceneReady) return;
       drawCover(foregroundContext, video, width, height);
+      if (framed) {
+        context.drawImage(scene, 0, 0);
+        const size = Math.min(width, height) * .82;
+        context.save();
+        context.beginPath();
+        context.arc(width / 2, height / 2, size / 2, 0, Math.PI * 2);
+        context.clip();
+        drawCover(context, foreground, width, height);
+        context.restore();
+        report('framed');
+        resolveFirstFrame();
+        return;
+      }
+      if (!model) return;
       inputContext.drawImage(foreground, 0, 0, input.width, input.height);
-      const {data} = await model.segmentPerson(input, {internalResolution: 'medium', segmentationThreshold: .5});
-      if (stopped) return;
+      const {data} = await model.segmentPerson(input, {internalResolution: 'medium', segmentationThreshold: .35});
+      if (stopped || framed) return;
 
       let personPixels = 0;
       for (let i = 0; i < data.length; i++) {
@@ -116,7 +139,7 @@
       const now = performance.now();
       if (personPixels < data.length * .005) {
         // Hold the previous composite through brief detection misses.
-        if (lastPerson && now - lastPerson > 2500) throw new Error('No person detected.');
+        if (!lastPerson || now - lastPerson > 2500) report('searching');
         return;
       }
       lastPerson = now;
@@ -128,17 +151,22 @@
       context.globalCompositeOperation = 'destination-over';
       context.drawImage(scene, 0, 0);
       context.globalCompositeOperation = 'source-over';
+      report('detected');
       resolveFirstFrame();
     }
 
-    async function nextFrame(model) {
+    async function nextFrame() {
       if (stopped) return;
       if (video.readyState >= 2 && video.videoWidth && video.currentTime !== lastTime) {
         lastTime = video.currentTime;
-        await drawFrame(model);
+        try { await drawFrame(model); }
+        catch (error) {
+          model = null;
+          if (!stopped) onError(error);
+        }
       }
       if (!stopped) timer = setTimeout(() => {
-        void nextFrame(model).catch(error => { if (!stopped) onError(error); });
+        void nextFrame();
       }, 50);
     }
 
@@ -155,17 +183,23 @@
       }
       if (stopped || version !== sceneVersion) return false;
       drawScene(sceneContext, choice, image, width, height);
+      previousState = null;
       sceneReady = true;
       await startup;
       await firstFrame;
       return !stopped && version === sceneVersion;
     }
 
+    async function prepareModel() {
+      try { model = await loadModel(); }
+      catch (error) { if (!stopped) onError(error); }
+    }
+
     const startup = (async () => {
       await video.play();
-      const model = await loadModel();
       if (stopped) return;
-      await nextFrame(model);
+      void prepareModel();
+      await nextFrame();
     })();
     // A scene may still be decoding when startup fails.
     void startup.catch(() => {});
@@ -173,6 +207,13 @@
     return {
       track,
       setScene,
+      useFraming(value) {
+        framed = value;
+        previousState = null;
+        lastPerson = 0;
+        lastTime = -1;
+        if (!framed && !model) void prepareModel();
+      },
       stop() {
         stopped = true;
         resolveFirstFrame();
@@ -180,6 +221,7 @@
         track.stop();
         video.pause();
         video.srcObject = null;
+        video.remove();
       }
     };
   };

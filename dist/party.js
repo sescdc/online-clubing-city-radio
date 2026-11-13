@@ -23,6 +23,7 @@
   const backdropPreview = element('party-backdrop-preview');
   const backdropFile = element('party-backdrop-file');
   const backdropStatus = element('party-backdrop-status');
+  const backdropFrame = element('party-backdrop-frame');
   const customOption = backdrop.querySelector('option[value="custom"]');
   const spotlight = element('karaoke-singer-video');
   let spotlightId = null;
@@ -296,7 +297,9 @@
     session.camera = null;
     session.videoBackground?.stop();
     session.videoBackground = null;
+    session.backgroundFramed = false;
     backdropStatus.textContent = '';
+    backdropFrame.hidden = true;
     return sendTrack(session, 'video', null);
   }
 
@@ -308,17 +311,18 @@
     const current = () => active === session && session.camera === camera && revision === session.backgroundRevision;
 
     function backgroundFailed(error) {
+      if (!current()) return;
       if (error) console.warn('Virtual background failed', error);
-      if (active !== session || session.camera !== camera) return;
-      void stopCamera(session);
-      updateControls(session);
-      backdropStatus.textContent = 'Virtual background paused. Face the camera in good light, then turn your camera back on.';
+      backdropFrame.hidden = true;
+      backdropStatus.textContent = 'This background could not start. Choose another scene or select Club default.';
     }
 
     if (!choice) {
       session.videoBackground?.stop();
       session.videoBackground = null;
+      session.backgroundFramed = false;
       backdropStatus.textContent = '';
+      backdropFrame.hidden = true;
       void sendTrack(session, 'video', camera).then(results => {
         if (current() && results.some(result => result.status === 'rejected')) {
           backdropStatus.textContent = 'A guest could not receive your camera.';
@@ -327,23 +331,44 @@
       return;
     }
 
+    if (session.tracks.video === camera) void sendTrack(session, 'video', null);
     try {
       if (!session.videoBackground) {
-        const effect = window.createPartyVideoBackground(camera, error => {
-          if (session.videoBackground === effect) backgroundFailed(error);
+        backdropFrame.textContent = 'Use camera frame';
+        const effect = window.createPartyVideoBackground(camera, state => {
+          if (active !== session || session.videoBackground !== effect) return;
+          if (state === 'searching') {
+            backdropStatus.textContent = 'Looking for you. Face the camera in good light. Camera frame can show part of your real surroundings.';
+            backdropFrame.hidden = false;
+          } else {
+            backdropStatus.textContent = state === 'framed' ? 'Camera frame on.' : 'Virtual background on.';
+            backdropFrame.hidden = state !== 'framed';
+            backdropFrame.textContent = state === 'framed' ? 'Use automatic cutout' : 'Use camera frame';
+          }
+        }, error => {
+          if (active !== session || session.videoBackground !== effect) return;
+          console.warn('Virtual background failed', error);
+          backdropStatus.textContent = 'Automatic cutout is unavailable. Camera frame can show part of your real surroundings.';
+          backdropFrame.hidden = false;
         });
         session.videoBackground = effect;
       }
       const effect = session.videoBackground;
       backdropStatus.textContent = 'Applying virtual background…';
-      const timeout = setTimeout(() => { if (current()) backgroundFailed(); }, 15000);
+      const timeout = setTimeout(() => {
+        if (current()) {
+          backdropStatus.textContent = 'The background is still loading. Camera frame can show part of your real surroundings.';
+          backdropFrame.hidden = false;
+        }
+      }, 12000);
       void effect.setScene(choice, customPhoto).then(async ready => {
         if (!current() || !ready) return;
         const results = session.tracks.video === effect.track ? [] : await sendTrack(session, 'video', effect.track);
         if (!current()) return;
         updateControls(session);
-        backdropStatus.textContent = results.some(result => result.status === 'rejected')
-          ? 'A guest could not receive your virtual background.' : 'Virtual background on.';
+        if (results.some(result => result.status === 'rejected')) {
+          backdropStatus.textContent = 'A guest could not receive your virtual background.';
+        }
       }).catch(error => { if (current()) backgroundFailed(error); }).finally(() => clearTimeout(timeout));
     } catch (error) {
       backgroundFailed(error);
@@ -735,6 +760,13 @@
       applyVideoBackground(active);
       updateControls(active);
     }
+  });
+  backdropFrame.addEventListener('click', () => {
+    const session = active;
+    if (!session?.videoBackground) return;
+    session.backgroundFramed = !session.backgroundFramed;
+    session.videoBackground.useFraming(session.backgroundFramed);
+    backdropFrame.textContent = session.backgroundFramed ? 'Use automatic cutout' : 'Use camera frame';
   });
   backdropFile.addEventListener('change', async () => {
     const session = active;
