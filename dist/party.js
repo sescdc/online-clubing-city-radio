@@ -20,12 +20,71 @@
   const chatInput = element('meet-message');
   const chatSend = chatForm.querySelector('button');
   const backdrop = element('party-backdrop');
+  const backdropPreview = element('party-backdrop-preview');
+  const backdropFile = element('party-backdrop-file');
+  const backdropStatus = element('party-backdrop-status');
+  const customOption = backdrop.querySelector('option[value="custom"]');
   const spotlight = element('karaoke-singer-video');
   let spotlightId = null;
   let room = null;
   let active = null;
   let attempt = 0;
   let joining = false;
+  let customPhoto = null;
+  let savedBackdrop = '';
+  try {
+    const saved = localStorage.getItem('club-party-backdrop');
+    if (saved && saved !== 'custom' && [...backdrop.options].some(option => option.value === saved)) {
+      backdrop.value = savedBackdrop = saved;
+    }
+  } catch {}
+  backdropPreview.dataset.backdrop = backdrop.value;
+
+  function paintBackdrop(card, choice) {
+    if (card.dataset.backdrop === choice) return;
+    card.dataset.backdrop = choice;
+    const version = /^custom:([a-f0-9-]{36})$/.exec(choice)?.[1];
+    card.style.backgroundImage = version ? 'url("/api/party/backdrop?v=' + version + '")'
+      : choice === 'custom' && customPhoto ? 'url("data:image/jpeg;base64,' + customPhoto + '")' : '';
+  }
+
+  function currentBackdrop(session) {
+    return backdrop.value === 'custom' ? session.backdropVersion ? 'custom:' + session.backdropVersion : '' : backdrop.value;
+  }
+
+  async function uploadBackdrop(session, photo) {
+    const data = await api('backdrop', {...identity(session), image:photo});
+    if (active !== session) return;
+    session.backdropVersion = data.version;
+  }
+
+  async function readBackdrop(file) {
+    if (file.size > 15 * 1024 * 1024) throw new Error('Choose a photo under 15 MB.');
+    const url = URL.createObjectURL(file);
+    try {
+      const image = new Image();
+      await new Promise((resolve, reject) => {
+        image.onload = resolve;
+        image.onerror = () => reject(new Error('This photo could not be opened. Try a JPG, PNG, or WebP.'));
+        image.src = url;
+      });
+      const canvas = document.createElement('canvas');
+      canvas.width = 448;
+      canvas.height = 252;
+      const context = canvas.getContext('2d');
+      const scale = Math.max(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
+      const width = image.naturalWidth * scale;
+      const height = image.naturalHeight * scale;
+      context.drawImage(image, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+      for (const quality of [0.78, 0.6, 0.42, 0.25]) {
+        const photo = canvas.toDataURL('image/jpeg', quality).split(',')[1];
+        if (photo && photo.length <= 65_536) return photo;
+      }
+      throw new Error('This photo is too large. Choose another photo.');
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
 
   function describeMediaError(kind, error) {
     const device = labels[kind].toLowerCase();
@@ -104,7 +163,7 @@
   function updateTile(view, member, local) {
     view.tag.textContent = member.name + (local ? ' (you)' : '') + (member.mic ? '' : ' · muted');
     view.video.classList.toggle('camera-off', !member.camera);
-    view.card.dataset.backdrop = member.backdrop ?? '';
+    paintBackdrop(view.card, member.backdrop ?? '');
   }
 
   function identity(session) {
@@ -331,7 +390,7 @@
     try {
       const data = await api('sync', {
         ...identity(session), cursor: session.cursor, outgoing, channel: session.channel,
-        backdrop: backdrop.value,
+        backdrop: currentBackdrop(session),
         camera: Boolean(session.tracks.video), mic: Boolean(session.tracks.audio)
       });
       if (active !== session) return;
@@ -500,6 +559,17 @@
       openBrowser.hidden = true;
       updateControls(session);
       if (focusMic) kinds.audio.focus();
+      if (customPhoto && backdrop.value === 'custom') {
+        backdropFile.disabled = true;
+        void uploadBackdrop(session, customPhoto).catch(() => {
+          if (active === session) {
+            backdrop.value = savedBackdrop;
+            paintBackdrop(backdropPreview, savedBackdrop);
+            updateControls(session);
+            backdropStatus.textContent = 'Your upload could not be shared in this room. Choose a photo to retry.';
+          }
+        }).finally(() => { if (active === session) backdropFile.disabled = false; });
+      } else backdropFile.disabled = false;
       void sync(session);
       return identity(session);
     } catch (error) {
@@ -570,7 +640,41 @@
     if (active) showMeet(active, !active.meetOpen);
   });
   backdrop.addEventListener('change', () => {
+    if (backdrop.value !== 'custom') {
+      savedBackdrop = backdrop.value;
+      try { localStorage.setItem('club-party-backdrop', savedBackdrop); } catch {}
+    }
+    backdropStatus.textContent = '';
+    paintBackdrop(backdropPreview, backdrop.value);
     if (active) updateControls(active);
+  });
+  backdropFile.addEventListener('change', async () => {
+    const session = active;
+    const file = backdropFile.files[0];
+    if (!session || !file) return;
+    backdropFile.disabled = true;
+    backdropStatus.textContent = 'Preparing photo…';
+    try {
+      const photo = await readBackdrop(file);
+      if (active !== session) return;
+      await uploadBackdrop(session, photo);
+      if (active !== session) return;
+      customPhoto = photo;
+      customOption.hidden = false;
+      backdrop.value = 'custom';
+      backdropPreview.dataset.backdrop = '';
+      session.view.card.dataset.backdrop = '';
+      paintBackdrop(backdropPreview, 'custom');
+      updateControls(session);
+      backdropStatus.textContent = 'Your photo is ready. It appears when your camera is off.';
+    } catch (error) {
+      if (active === session) backdropStatus.textContent = error.message || 'Could not upload your photo.';
+    } finally {
+      if (active === session) {
+        backdropFile.disabled = false;
+        backdropFile.value = '';
+      }
+    }
   });
   element('party-sound').addEventListener('click', () => {
     if (!active) return;

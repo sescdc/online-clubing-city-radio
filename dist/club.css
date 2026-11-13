@@ -102,8 +102,24 @@ footer{display:flex;justify-content:space-between;gap:16px;border-top:1px solid 
 .party-meet h3 {margin:0 0 4px}
 .party-meet .actions {margin-top:9px}
 .party-meet button {max-width:100%;overflow-wrap:anywhere;white-space:normal}
-.party-backdrop {display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;color:var(--muted);font-size:13px}
-.party-backdrop select {min-height:44px;padding:6px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);font:inherit;font-size:16px}
+.party-backdrop {max-width:100%;color:var(--muted);font-size:13px}
+.party-backdrop[open] {flex-basis:100%;padding:10px;border:1px solid var(--line);border-radius:8px}
+.party-backdrop summary {display:list-item;align-content:center;min-height:44px;padding:0 9px;cursor:pointer;color:var(--ink)}
+.party-backdrop label {display:block;margin-top:8px}
+.party-backdrop select {width:min(100%,320px);min-height:44px;padding:6px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);font:inherit;font-size:16px}
+.party-backdrop input {max-width:100%;min-height:44px;font-size:16px}
+#party-backdrop-preview {width:min(100%,320px);margin-top:8px;aspect-ratio:16/9}
+.party-tile[data-backdrop] {background-position:center;background-size:cover}
+.party-tile[data-backdrop=neon] {background-image:url(club-neon.webp)}
+.party-tile[data-backdrop=vip] {background-image:url(club-vip.webp)}
+.party-tile[data-backdrop=rooftop] {background-image:url(club-rooftop.webp)}
+.party-tile[data-backdrop=velvet] {background-image:url(club-velvet.webp)}
+.party-tile[data-backdrop=warehouse] {background-image:url(club-warehouse.webp)}
+.party-tile[data-backdrop=disco] {background-image:url(club-disco.webp)}
+.party-tile[data-backdrop=tropical] {background-image:url(club-tropical.webp)}
+.party-tile[data-backdrop=arcade] {background-image:url(club-arcade.webp)}
+.party-tile[data-backdrop=vinyl] {background-image:url(club-vinyl.webp)}
+.party-tile[data-backdrop=tunnel] {background-image:url(club-tunnel.webp)}
 .party-tile[data-backdrop=city] {background:linear-gradient(0deg,#06162e25,#06162e50),url(hero.webp) center/cover}
 .party-tile[data-backdrop=wave] {background:linear-gradient(155deg,#071a38 22%,#2477ce 52%,#143e73 77%)}
 .party-tile[data-backdrop=sunset] {background:radial-gradient(ellipse at 65% 90%,#ffac61,#a44826 42%,#172f5d 78%)}

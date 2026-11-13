@@ -11,6 +11,9 @@ const assetTypes = {
   'karaoke-after-hours.mp3': 'audio/mpeg',
   'hero.webp': 'image/webp'
 };
+for (const scene of ['neon', 'vip', 'rooftop', 'velvet', 'warehouse', 'disco', 'tropical', 'arcade', 'vinyl', 'tunnel']) {
+  assetTypes['club-' + scene + '.webp'] = 'image/webp';
+}
 const root = new URL('../', import.meta.url);
 const assets = {};
 for (const [name, type] of Object.entries(assetTypes)) {

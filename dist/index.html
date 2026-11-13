@@ -63,15 +63,32 @@
   <button id="party-camera" class="button outline compact" type="button" aria-pressed="false">Camera off</button>
   <button id="party-sound" class="button outline compact" type="button" hidden>Enable guest audio</button>
   <button id="party-meet-toggle" class="button outline compact" type="button" aria-expanded="false" aria-controls="party-meet">Meet &amp; Greet</button>
-  <label class="party-backdrop" for="party-backdrop">Camera-off background
+  <details class="party-backdrop">
+    <summary>Background</summary>
+    <label for="party-backdrop">Choose a club scene</label>
     <select id="party-backdrop">
       <option value="">Club default</option>
+      <option value="neon">Neon Underground</option>
+      <option value="vip">Gold VIP Lounge</option>
+      <option value="rooftop">Skyline Rooftop</option>
+      <option value="velvet">Red Velvet</option>
+      <option value="warehouse">Warehouse Lasers</option>
+      <option value="disco">Mirrorball Disco</option>
+      <option value="tropical">Tropical After Dark</option>
+      <option value="arcade">Neon Arcade</option>
+      <option value="vinyl">Vinyl Room</option>
+      <option value="tunnel">Blue LED Tunnel</option>
       <option value="city">City lights</option>
       <option value="wave">Blue wave</option>
       <option value="sunset">Sunset</option>
       <option value="studio">White studio</option>
+      <option value="custom" hidden>My upload</option>
     </select>
-  </label>
+    <div id="party-backdrop-preview" class="party-tile" aria-hidden="true"></div>
+    <label for="party-backdrop-file">Upload a photo to show in the room</label>
+    <input id="party-backdrop-file" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif">
+    <p id="party-backdrop-status" class="feedback" role="status"></p>
+  </details>
   <button id="party-leave" class="button leave compact" type="button">Leave video</button>
 </div>
 <section id="party-meet" class="party-meet" aria-labelledby="party-meet-title" hidden>

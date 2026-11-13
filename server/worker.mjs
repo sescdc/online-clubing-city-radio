@@ -7,7 +7,8 @@ function reply(body, status = 200) {
   return Response.json(body, {status, headers});
 }
 
-const backdrops = new Set(['city', 'wave', 'sunset', 'studio']);
+const backdrops = new Set(['city', 'wave', 'sunset', 'studio', 'neon', 'vip', 'rooftop',
+  'velvet', 'warehouse', 'disco', 'tropical', 'arcade', 'vinyl', 'tunnel']);
 const inviteLifetime = 2 * 60_000;
 const meetingLifetime = 60 * 60_000;
 
@@ -87,6 +88,7 @@ async function handleParty(request, env, path) {
       db.prepare('DELETE FROM party_signals WHERE created < ?').bind(now - 90_000),
       db.prepare('DELETE FROM party_meetings WHERE expires <= ?').bind(now),
       db.prepare('DELETE FROM party_members WHERE seen < ?').bind(cutoff),
+      db.prepare('DELETE FROM party_backdrops WHERE member_id NOT IN (SELECT id FROM party_members)'),
       db.prepare(`INSERT INTO party_members (id, room, token, name, seen)
         VALUES (?, ?, ?, ?, ?)`).bind(id, room, token, name, now)
     ]);
@@ -102,6 +104,9 @@ async function handleParty(request, env, path) {
   if (!uuidPattern.test(id) || !uuidPattern.test(token)) return reply({error: 'Rejoin this room.'}, 401);
   if (path === '/api/party/leave') {
     await db.batch([
+      db.prepare(`DELETE FROM party_backdrops WHERE member_id = ?
+        AND EXISTS (SELECT 1 FROM party_members WHERE room = ? AND id = ? AND token = ?)`)
+        .bind(id, room, id, token),
       db.prepare(`DELETE FROM party_meetings WHERE room = ? AND (host = ? OR guest = ?)
         AND EXISTS (SELECT 1 FROM party_members WHERE room = ? AND id = ? AND token = ?)`)
         .bind(room, id, id, room, id, token),
@@ -115,6 +120,18 @@ async function handleParty(request, env, path) {
   if (!member) return reply({error: 'Your connection expired. Rejoin the room.'}, 401);
 
   if (path === '/api/party/meet') return updateMeeting(db, body, now, cutoff);
+  if (path === '/api/party/backdrop') {
+    if (typeof body.image !== 'string' || body.image.length > 65_536 || body.image.length % 4 !== 0
+      || !/^\/9j\/[A-Za-z0-9+/]+={0,2}$/.test(body.image)) {
+      return reply({error: 'Choose a supported photo and try again.'}, 400);
+    }
+    const version = crypto.randomUUID();
+    const result = await db.prepare(`INSERT INTO party_backdrops (member_id, version, image)
+      SELECT id, ?, ? FROM party_members WHERE room = ? AND id = ? AND token = ? AND seen >= ?
+      ON CONFLICT(member_id) DO UPDATE SET version = excluded.version, image = excluded.image`)
+      .bind(version, body.image, room, id, token, cutoff).run();
+    return result.meta.changes ? reply({version}) : reply({error: 'Rejoin the room to upload a photo.'}, 401);
+  }
 
   const meeting = await db.prepare(activeMeeting).bind(cutoff, cutoff, room, id, id, now).first();
   const channel = meeting?.id ?? '';
@@ -122,12 +139,18 @@ async function handleParty(request, env, path) {
   const turn = !channel && await db.prepare('SELECT performer_id FROM karaoke_turns WHERE room = ? AND ends_at > ?')
     .bind(room, now).first();
   const singer = turn?.performer_id ?? null;
+  let backdrop = backdrops.has(body.backdrop) ? body.backdrop : '';
+  if (typeof body.backdrop === 'string' && body.backdrop.startsWith('custom:')) {
+    const version = body.backdrop.slice(7);
+    if (uuidPattern.test(version) && await db.prepare('SELECT 1 FROM party_backdrops WHERE member_id = ? AND version = ?')
+      .bind(id, version).first()) backdrop = body.backdrop;
+  }
   const outgoing = Array.isArray(body.outgoing) ? body.outgoing : [];
   if (outgoing.length > 30) return reply({error: 'Too many connection messages.'}, 400);
   const statements = [
     db.prepare('UPDATE party_members SET seen = ?, camera = ?, mic = ?, backdrop = ? WHERE id = ?')
       .bind(now, Number(channel === expectedChannel && body.camera === true),
-        Number(channel === expectedChannel && body.mic === true && (!singer || singer === id)), backdrops.has(body.backdrop) ? body.backdrop : '', id)
+        Number(channel === expectedChannel && body.mic === true && (!singer || singer === id)), backdrop, id)
   ];
   if (channel && channel !== expectedChannel) {
     statements.push(db.prepare('DELETE FROM party_signals WHERE target = ? AND channel = ?').bind(id, ''));
@@ -302,6 +325,17 @@ export default {
   async fetch(request, env) {
     const path = new URL(request.url).pathname;
     if (path === '/api/karaoke/search') return searchKaraoke(request, env);
+    if (path === '/api/party/backdrop' && request.method === 'GET') {
+      const version = new URL(request.url).searchParams.get('v');
+      if (!env.DB || !uuidPattern.test(version ?? '')) return new Response(null, {status: 404});
+      const entry = await env.DB.prepare(`SELECT b.image FROM party_backdrops b
+        JOIN party_members p ON p.id = b.member_id WHERE b.version = ? AND p.backdrop = ? AND p.seen >= ?`)
+        .bind(version, 'custom:' + version, Date.now() - presenceWindow).first();
+      if (!entry) return new Response(null, {status: 404, headers});
+      return new Response(Uint8Array.from(atob(entry.image), byte => byte.charCodeAt(0)), {headers:{
+        ...headers, 'Content-Type':'image/jpeg', 'X-Content-Type-Options':'nosniff', 'Cross-Origin-Resource-Policy':'same-origin'
+      }});
+    }
     if (path === '/api/karaoke') {
       try { return await handleKaraoke(request, env); }
       catch (error) {
@@ -309,7 +343,7 @@ export default {
         return reply({error: 'The karaoke stage is temporarily unavailable.'}, 503);
       }
     }
-    if (['/api/party/join', '/api/party/sync', '/api/party/leave', '/api/party/meet'].includes(path)) {
+    if (['/api/party/join', '/api/party/sync', '/api/party/leave', '/api/party/meet', '/api/party/backdrop'].includes(path)) {
       try { return await handleParty(request, env, path); }
       catch (error) {
         console.error('Party request failed', path, error.message);
