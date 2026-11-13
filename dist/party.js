@@ -19,6 +19,8 @@
   const chatInput = element('meet-message');
   const chatSend = chatForm.querySelector('button');
   const backdrop = element('party-backdrop');
+  const spotlight = element('karaoke-singer-video');
+  let spotlightId = null;
   let room = null;
   let active = null;
   let attempt = 0;
@@ -55,6 +57,16 @@
     card.append(avatar, video, tag);
     grid.append(card);
     return {card, video, tag};
+  }
+
+  function renderSpotlight() {
+    const view = !active ? null
+      : spotlightId === active.id || (!spotlightId && !element('karaoke-main-stage').hidden) ? active.view
+      : active.peers.get(spotlightId)?.view ?? active.audience.get(spotlightId);
+    const old = spotlight.firstElementChild;
+    if (old && old !== view?.card) grid.append(old);
+    if (view && old !== view.card) spotlight.append(view.card);
+    element('karaoke-singer-empty').hidden = Boolean(view);
   }
 
   function updateTile(view, member, local) {
@@ -303,16 +315,38 @@
       renderMeet(session);
       if (session.channel) renderChat(session, data.chat ?? []);
       count.textContent = data.members.length + (data.members.length === 1 ? ' guest' : ' guests');
-      const members = new Set(data.members.map(member => member.id));
+      // Keep the peer mesh bounded. All other members are visible as audience tiles.
+      const mediaSeats = data.members.filter(member => member.id !== data.singer).slice(0, data.singer ? 5 : 6);
+      const performer = data.members.find(member => member.id === data.singer);
+      if (performer) mediaSeats.unshift(performer);
+      const media = new Set(mediaSeats.map(member => member.id));
+      const connected = media.has(session.id);
+      const guests = new Set(data.members.map(member => member.id));
       for (const [id, peer] of session.peers) {
-        if (!members.has(id)) {
+        if (!connected || !media.has(id)) {
           peer.pc.close();
           peer.view.card.remove();
           session.peers.delete(id);
+          session.outgoing = session.outgoing.filter(message => message.target !== id);
         }
       }
+      for (const [id, view] of session.audience) {
+        if (!guests.has(id) || (connected && media.has(id))) {
+          view.card.remove();
+          session.audience.delete(id);
+        }
+      }
+      session.audienceOnly = !connected;
+      updateControls(session);
       for (const member of data.members) {
         if (member.id === session.id) continue;
+        if (!connected || !media.has(member.id)) {
+          const view = session.audience.get(member.id) ?? tile(member, false);
+          session.audience.set(member.id, view);
+          updateTile(view, {...member, camera: false, mic: false}, false);
+          view.tag.textContent = member.name + ' · audience';
+          continue;
+        }
         let peer = session.peers.get(member.id);
         if (!peer) {
           peer = connection(session, member);
@@ -324,6 +358,7 @@
         peer.member = member;
         updatePeer(peer);
       }
+      renderSpotlight();
       for (const message of data.messages) {
         try { await receive(session, message); }
         catch { status.textContent = 'A guest’s connection failed. Leave and rejoin to try again.'; }
@@ -354,7 +389,10 @@
       void api('leave', identity(session)).catch(() => {});
     }
     grid.replaceChildren();
+    spotlight.replaceChildren();
+    renderSpotlight();
     grid.hidden = controls.hidden = count.hidden = true;
+    element('party-audience').hidden = true;
     element('party-sound').hidden = true;
     meet.hidden = true;
     meetToggle.setAttribute('aria-expanded', 'false');
@@ -373,8 +411,20 @@
       button.setAttribute('aria-pressed', String(on));
       button.textContent = labels[kind] + (on ? ' on' : ' off');
     }
-    kinds.audio.disabled = micLocked(session) || session.pendingMedia.has('audio');
-    kinds.video.disabled = session.pendingMedia.has('video');
+    element('party-audience').hidden = !session.audienceOnly;
+    if (session.audienceOnly) {
+      for (const [kind, track] of Object.entries(session.tracks)) {
+        track?.stop();
+        session.tracks[kind] = null;
+      }
+      session.view.video.srcObject = null;
+    }
+    kinds.audio.disabled = session.audienceOnly || micLocked(session) || session.pendingMedia.has('audio');
+    kinds.video.disabled = session.audienceOnly || session.pendingMedia.has('video');
+    if (session.audienceOnly) {
+      kinds.audio.textContent = 'Audience mic off';
+      kinds.video.textContent = 'Audience camera off';
+    }
     if (micLocked(session)) kinds.audio.textContent = 'Mic locked for singer';
     session.view.card.classList.toggle('party-singing', session.singer === session.id);
     updateTile(session.view, {name: session.name, camera: session.tracks.video, mic: session.tracks.audio, backdrop: backdrop.value}, true);
@@ -406,7 +456,7 @@
       }
       name.value = displayName;
       const view = tile({name: displayName}, true);
-      const session = {...ticket, room: selected, name: displayName, view, tracks: {}, peers: new Map(), outgoing: [], cursor: 0, channel: '', members: [], pendingMedia: new Set()};
+      const session = {...ticket, room: selected, name: displayName, view, tracks: {}, peers: new Map(), audience: new Map(), outgoing: [], cursor: 0, channel: '', members: [], pendingMedia: new Set()};
       active = session;
       const singerName = element('singer-name');
       if (!singerName.value) singerName.value = displayName;
@@ -431,7 +481,7 @@
   for (const [kind, button] of Object.entries(kinds)) {
     button.addEventListener('click', async () => {
       const session = active;
-      if (!session || (kind === 'audio' && micLocked(session))) return;
+      if (!session || session.audienceOnly || (kind === 'audio' && micLocked(session))) return;
       button.disabled = true;
       session.pendingMedia.add(kind);
       const channel = session.channel;
@@ -443,7 +493,7 @@
           const constraints = kind === 'video' ? {video: {width: {ideal: 640}, height: {ideal: 360}, frameRate: {ideal: 24}}} : {audio: true};
           const stream = await navigator.mediaDevices.getUserMedia(constraints);
           track = stream.getTracks()[0];
-          if (active !== session || channel !== session.channel || (kind === 'audio' && micLocked(session))) {
+          if (active !== session || channel !== session.channel || session.audienceOnly || (kind === 'audio' && micLocked(session))) {
             track.stop();
             return;
           }
@@ -463,7 +513,7 @@
         if (active === session) status.textContent = 'Could not access your ' + labels[kind].toLowerCase() + '. Check your browser permissions.';
       } finally {
         session.pendingMedia.delete(kind);
-        if (active === session) button.disabled = kind === 'audio' && micLocked(session);
+        if (active === session) updateControls(session);
       }
     });
   }
@@ -485,6 +535,10 @@
   });
   window.addEventListener('pagehide', () => leave());
   window.clubParty = {
+    spotlight(id) {
+      spotlightId = id;
+      renderSpotlight();
+    },
     joinSinger(displayName) { return joinRoom(displayName, false); },
     singer(nextRoom, id, time) {
       if (active?.room === nextRoom && !active.channel) applySinger(active, id, time);

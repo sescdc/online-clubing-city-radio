@@ -325,7 +325,10 @@ byId('mode-radio').addEventListener('click', () => {
   if (musicMode !== 'radio') setMusicMode('radio', !current.national && !current.match);
 });
 byId('mode-karaoke').addEventListener('click', () => {
-  if (musicMode !== 'karaoke') setMusicMode('karaoke');
+  if (musicMode !== 'karaoke') {
+    setMusicMode('karaoke');
+    byId('karaoke-panel').scrollIntoView({block:'start'});
+  }
 });
 
 const bay = stations.find(station => station.id === 'bay');

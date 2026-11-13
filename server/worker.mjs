@@ -1,4 +1,3 @@
-const maxGuests = 6;
 const presenceWindow = 45_000;
 const roomPattern = /^(?:city-[a-z0-9-]{2,24}|nationwide|bay-stl)$/;
 const uuidPattern = /^[0-9a-f-]{36}$/;
@@ -89,15 +88,14 @@ async function handleParty(request, env, path) {
       db.prepare('DELETE FROM party_meetings WHERE expires <= ?').bind(now),
       db.prepare('DELETE FROM party_members WHERE seen < ?').bind(cutoff),
       db.prepare(`INSERT INTO party_members (id, room, token, name, seen)
-        SELECT ?, ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM party_members WHERE room = ? AND seen >= ?) < ?`)
-        .bind(id, room, token, name, now, room, cutoff, maxGuests)
+        VALUES (?, ?, ?, ?, ?)`).bind(id, room, token, name, now)
     ]);
     let iceServers;
     try {
       const configured = JSON.parse(env.PARTY_ICE_SERVERS ?? 'null');
       if (Array.isArray(configured)) iceServers = configured;
     } catch { /* Use the default STUN server when no valid configuration is supplied. */ }
-    return results.at(-1).meta.changes ? reply({id, token, iceServers}) : reply({error: 'This video room is full (6 guests).'}, 409);
+    return results.at(-1).meta.changes ? reply({id, token, iceServers}) : reply({error: 'Could not join this room.'}, 503);
   }
 
   const {id, token} = body;
@@ -163,7 +161,7 @@ async function handleParty(request, env, path) {
           JOIN party_members h ON h.id = m.host AND h.seen >= ?
           JOIN party_members g ON g.id = m.guest AND g.seen >= ?
           WHERE m.room = p.room AND m.accepted = 1 AND m.expires > ? AND p.id IN (m.host, m.guest)
-        ) ORDER BY p.id`).bind(room, cutoff, cutoff, cutoff, now);
+        ) ORDER BY p.rowid`).bind(room, cutoff, cutoff, cutoff, now);
   statements.push(
     db.prepare('DELETE FROM party_signals WHERE target = ? AND (created < ? OR (channel = ? AND id <= ?))')
       .bind(id, now - 90_000, expectedChannel, cursor),
@@ -187,6 +185,8 @@ async function handleParty(request, env, path) {
 }
 
 const trackDuration = Object.freeze({'city-lights': 30_750, 'after-hours': 35_030});
+const youtubeTrack = /^youtube:[A-Za-z0-9_-]{11}$/;
+const countdown = 5000;
 const queueLifetime = 2 * 60 * 60 * 1000;
 
 async function handleKaraoke(request, env) {
@@ -206,7 +206,7 @@ async function handleKaraoke(request, env) {
     if (!input || typeof input.key !== 'string' || !uuidPattern.test(input.key)) return reply({error: 'Refresh the room and try again.'}, 400);
     if (input.action === 'join') {
       const singer = typeof input.name === 'string' ? input.name.trim().replace(/\s+/g, ' ') : '';
-      if (!singer || singer.length > 32 || !Object.hasOwn(trackDuration, input.track)) {
+      if (!singer || singer.length > 32 || !(typeof input.track === 'string' && (Object.hasOwn(trackDuration, input.track) || youtubeTrack.test(input.track)))) {
         return reply({error: 'Enter a singer name and pick a stage song.'}, 400);
       }
       const results = await db.batch([
@@ -240,14 +240,14 @@ async function handleKaraoke(request, env) {
       if (!performer || meeting) return reply({error: 'Rejoin the singer screen before starting your song.'}, 409);
       const own = await db.prepare('SELECT track FROM karaoke_turns WHERE room = ? AND id = ? AND singer_key = ? AND started_at IS NULL')
         .bind(room, input.id, input.key).first();
-      const duration = own && trackDuration[own.track];
+      const duration = own && (youtubeTrack.test(own.track) ? 30 * 60_000 : trackDuration[own.track]);
       if (!duration) return reply({error: 'Your turn is unavailable. Sign up again if it expired.'}, 409);
       const result = await db.prepare(`UPDATE karaoke_turns SET started_at = ?, ends_at = ?, performer_id = ?
         WHERE room = ? AND id = ? AND singer_key = ? AND started_at IS NULL
           AND id = (SELECT MIN(id) FROM karaoke_turns WHERE room = ? AND started_at IS NULL AND created_at >= ?)
           AND NOT EXISTS (SELECT 1 FROM karaoke_turns WHERE room = ? AND ends_at > ?)
           AND NOT EXISTS (${activeMeeting})`)
-        .bind(now, now + duration, performer.id, room, input.id, input.key, room, cutoff, room, now,
+        .bind(now + countdown, now + countdown + duration, performer.id, room, input.id, input.key, room, cutoff, room, now,
           now - presenceWindow, now - presenceWindow, room, performer.id, performer.id, now).run();
       if (!result.meta.changes) return reply({error: 'Wait until the singer list shows you are up next.'}, 409);
     } else {
@@ -265,9 +265,32 @@ async function handleKaraoke(request, env) {
   return reply({now: stateTime, turns: results});
 }
 
+async function searchKaraoke(request, env) {
+  if (request.method !== 'GET') return reply({error: 'Method unavailable.'}, 405);
+  if (!env.YOUTUBE_DATA_API_KEY) return reply({available: false});
+  const query = new URL(request.url).searchParams.get('q')?.trim().slice(0, 150);
+  if (!query) return reply({available: true});
+  const url = new URL('https://www.googleapis.com/youtube/v3/search');
+  url.search = new URLSearchParams({
+    key: env.YOUTUBE_DATA_API_KEY, q: query + ' karaoke with lyrics', part: 'snippet',
+    type: 'video', videoEmbeddable: 'true', videoSyndicated: 'true', maxResults: '5'
+  });
+  try {
+    const response = await fetch(url, {signal: AbortSignal.timeout(5000)});
+    if (!response.ok) return reply({available: false});
+    const data = await response.json();
+    return reply({available: true, videos: data.items.map(item => ({
+      id: item.id.videoId, title: item.snippet.title, channel: item.snippet.channelTitle
+    }))});
+  } catch {
+    return reply({available: false});
+  }
+}
+
 export default {
   async fetch(request, env) {
     const path = new URL(request.url).pathname;
+    if (path === '/api/karaoke/search') return searchKaraoke(request, env);
     if (path === '/api/karaoke') {
       try { return await handleKaraoke(request, env); }
       catch (error) {

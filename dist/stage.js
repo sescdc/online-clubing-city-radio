@@ -9,6 +9,17 @@
   const leave = el('singer-leave');
   const practice = el('singer-practice');
   const status = el('singer-status');
+  const stage = el('stage-screen');
+  const stageHome = stage.parentElement;
+  const stageAnchor = stage.nextElementSibling;
+  const mainStage = el('karaoke-main-stage');
+  const countdown = el('stage-countdown');
+  const youtube = el('stage-youtube');
+  const youtubeLink = el('stage-youtube-link');
+  const songSelect = el('singer-song');
+  const isYouTube = track => track?.startsWith('youtube:');
+  let youtubeFrame = null;
+  let youtubeID = null;
   const list = el('singer-list');
   let current = null;
   let audioTrack = null;
@@ -26,6 +37,82 @@
     option.value = track.id;
     option.textContent = track.title;
     el('singer-song').append(option);
+  }
+
+  function showYouTube(id) {
+    if (youtubeID === id) return;
+    youtubeID = id;
+    youtube.replaceChildren();
+    youtubeFrame = null;
+    youtube.hidden = youtubeLink.hidden = !id;
+    if (!id) return;
+    youtubeLink.href = 'https://www.youtube.com/watch?v=' + id;
+    const player = document.createElement('iframe');
+    player.className = 'karaoke-youtube-player';
+    player.title = 'YouTube karaoke video';
+    player.allow = 'autoplay; encrypted-media; fullscreen; picture-in-picture';
+    player.allowFullscreen = true;
+    player.referrerPolicy = 'strict-origin-when-cross-origin';
+    youtube.append(player);
+    youtubeFrame = player;
+  }
+
+  function videoSource(seconds, autoplay) {
+    const url = new URL('https://www.youtube.com/embed/' + youtubeID);
+    url.search = new URLSearchParams({
+      playsinline: '1', autoplay: String(Number(autoplay)), start: String(Math.floor(seconds)),
+      enablejsapi: '1', origin: location.origin
+    });
+    youtubeFrame.src = url.href;
+  }
+
+  window.addEventListener('message', event => {
+    if (event.origin !== 'https://www.youtube.com' || !youtubeFrame || event.source !== youtubeFrame.contentWindow) return;
+    let message;
+    try { message = typeof event.data === 'string' ? JSON.parse(event.data) : event.data; } catch { return; }
+    if (message?.event === 'onStateChange' && message.info === 0 && current?.own && !current.busy && current.live?.id === current.own) {
+      void mutate(current, {action:'leave', id:current.own});
+    }
+  });
+
+  function setupVideoEvents() {
+    youtubeFrame.addEventListener('load', () => {
+      const post = data => youtubeFrame?.contentWindow?.postMessage(JSON.stringify(data), 'https://www.youtube.com');
+      post({event:'listening'});
+      post({event:'command', func:'addEventListener', args:['onStateChange']});
+    });
+  }
+
+  function updatePlayback(session, turn, milliseconds) {
+    const track = tracks.get(turn.track);
+    const video = isYouTube(turn.track);
+    const beforeStart = milliseconds < 0;
+    countdown.hidden = !beforeStart;
+    if (beforeStart) {
+      const remaining = 'Starting in ' + Math.min(5, Math.ceil(-milliseconds / 1000));
+      if (countdown.textContent !== remaining) countdown.textContent = remaining;
+    }
+    sound.hidden = beforeStart;
+    el('stage-display').hidden = video && !beforeStart;
+    if (video) {
+      showYouTube(turn.track.slice(8));
+      youtube.hidden = beforeStart;
+      sound.textContent = 'Play video';
+      if (!beforeStart && session.playingTurn !== turn.id) {
+        session.playingTurn = turn.id;
+        setupVideoEvents();
+        videoSource(elapsed(session), true);
+        audioStatus.textContent = 'If playback is blocked, tap Play video or Watch on YouTube.';
+      }
+    } else {
+      showYouTube(null);
+      if (!beforeStart && session.playingTurn !== turn.id) {
+        session.playingTurn = turn.id;
+        audio.muted = false;
+        if (turn.id === session.own || soundEnabled) playAudio(session, track);
+        else audioStatus.textContent = 'Tap Play backing track to hear the music.';
+      }
+    }
   }
 
   function audioSource(track) {
@@ -86,8 +173,10 @@
     audioStatus.textContent = 'The backing track could not load. Tap Play backing track to retry.';
   });
   sound.addEventListener('click', () => {
-    if (!current?.live) return;
-    if (soundEnabled) mute();
+    if (!current?.live || sound.hidden) return;
+    if (isYouTube(current.live.track)) {
+      videoSource(elapsed(current), true);
+    } else if (soundEnabled) mute();
     else playAudio(current, tracks.get(current.live.track));
   });
 
@@ -111,10 +200,27 @@
     if (current !== session) return;
     const turn = session.live;
     const track = turn && tracks.get(turn.track);
-    if (!track || session.now + performance.now() - session.clock >= turn.ends_at) {
+    const now = session.now + performance.now() - session.clock;
+    const activeTurn = turn && now < turn.ends_at;
+    if (!activeTurn) {
       if (turn && !audio.paused) audio.pause();
+      countdown.hidden = sound.hidden = true;
+      el('stage-display').hidden = false;
+      showYouTube(null);
       el('stage-performer').textContent = '';
-      el('stage-lyric').textContent = 'Waiting for a singer';
+      el('stage-lyric').textContent = session.selectedVideo ? 'Join the queue to sing this song' : 'Waiting for a singer';
+      if (session.selectedVideo && !session.display) {
+        youtubeLink.href = 'https://www.youtube.com/watch?v=' + session.selectedVideo;
+        youtubeLink.hidden = false;
+      } else youtubeLink.hidden = true;
+      el('stage-next-line').textContent = '';
+      return;
+    }
+    const remaining = now - turn.started_at;
+    updatePlayback(session, turn, remaining);
+    el('stage-performer').textContent = turn.singer + ' · ' + (track?.title ?? 'YouTube karaoke');
+    if (remaining < 0 || !track) {
+      el('stage-lyric').textContent = 'Get ready';
       el('stage-next-line').textContent = '';
       return;
     }
@@ -134,6 +240,7 @@
     el('singer-submit').hidden = Boolean(own);
     el('singer-name').hidden = el('singer-name-label').hidden = Boolean(own);
     el('singer-name').required = !own;
+    practice.hidden = isYouTube(songSelect.value);
     practice.disabled = Boolean(session.busy || session.live);
     el('singer-song').disabled = Boolean(session.busy);
     el('singer-turn').hidden = !own;
@@ -150,7 +257,7 @@
       const item = document.createElement('li');
       item.classList.toggle('is-live', Boolean(turn.started_at));
       item.textContent = (turn.started_at ? 'Singing now: ' : !session.live && index === 0 ? 'Up next: ' : '')
-        + turn.singer + (turn.id === session.own ? ' (you)' : '') + ' · ' + (tracks.get(turn.track)?.title ?? '');
+        + turn.singer + (turn.id === session.own ? ' (you)' : '') + ' · ' + (tracks.get(turn.track)?.title ?? 'YouTube karaoke');
       return item;
     }));
   }
@@ -167,26 +274,17 @@
       try { sessionStorage.removeItem('club-turn-' + session.room); } catch {}
       if (!session.display) status.textContent = previous ? 'Your turn ended.' : 'Your queue entry expired. Join again to sing.';
     }
-    const next = session.live ?? session.turns[0];
-    sound.hidden = !session.live;
     window.clubParty.singer(session.room, session.live?.performer_id ?? null, data.now);
+    window.clubParty.spotlight(session.live?.performer_id ?? null);
+    el('karaoke-singer-heading').textContent = session.live?.singer ?? 'Singer';
     if (previous?.id !== session.live?.id) {
+      session.playingTurn = null;
+      if (previous) mute();
       if (session.live) {
         window.clubKaraoke.stop();
-        el('karaoke-solo').open = false;
-        const track = tracks.get(session.live.track);
-        if (soundEnabled && (audioTrack !== track?.id || audio.paused)) playAudio(session, track);
-        else {
-          audioSource(track);
-          if (soundEnabled) positionAudio(session, true);
-          else audioStatus.textContent = 'Tap Play backing track to hear the music.';
-        }
-      } else {
-        audio.pause();
-        audioStatus.textContent = '';
+        audioSource(tracks.get(session.live.track));
       }
     }
-    if (!session.live) audioSource(tracks.get(next?.track));
     renderLine(session);
     renderQueue(session);
   }
@@ -238,9 +336,8 @@
         status.textContent = 'You left the queue.';
       } else {
         apply(session, data, requestStarted);
-        audio.muted = false;
-        if (session.live) playAudio(session, tracks.get(session.live.track));
         status.textContent = 'You’re on stage. Turn on your mic when ready.';
+        mainStage.scrollIntoView({block:'start'});
         el('party-mic').focus({preventScroll:true});
       }
     } catch (error) {
@@ -277,9 +374,11 @@
     // Prime the player on the tap. Release the audio once the room confirms the turn.
     const track = tracks.get(own.track);
     window.clubKaraoke.stop();
-    audioSource(track);
-    audio.muted = true;
-    void audio.play().catch(() => {});
+    if (track) {
+      audioSource(track);
+      audio.muted = true;
+      void audio.play().catch(() => {});
+    }
     void mutate(session, {action:'start', id:own.id});
   });
   leave.addEventListener('click', () => {
@@ -298,7 +397,11 @@
     audio.removeAttribute('src');
     audio.load();
     audioTrack = null;
-    sound.hidden = true;
+    sound.hidden = countdown.hidden = true;
+    showYouTube(null);
+    mainStage.hidden = true;
+    window.clubParty.spotlight(null);
+    if (!document.body.classList.contains('stage-view-only')) stageHome.insertBefore(stage, stageAnchor);
   }
 
   function open(room, title, display = false) {
@@ -313,7 +416,12 @@
     el('stage-popout').href = url.href;
     status.textContent = '';
     if (el('party-name').value) el('singer-name').value = el('party-name').value;
-    el('singer-song').selectedIndex = 0;
+    songSelect.querySelector('[data-youtube]')?.remove();
+    songSelect.selectedIndex = 0;
+    if (!display) {
+      el('karaoke-song-pane').append(stage);
+      mainStage.hidden = false;
+    }
     renderLine(session);
     renderQueue(session);
     void refresh(session);
@@ -321,7 +429,26 @@
     session.lyrics = setInterval(() => renderLine(session), 120);
   }
 
-  window.clubStage = {open, close, mute};
+  songSelect.addEventListener('change', () => {
+    if (current) renderQueue(current);
+  });
+
+  function selectVideo(id, title = 'YouTube karaoke') {
+    if (!current || current.display || current.busy) return;
+    songSelect.querySelector('[data-youtube]')?.remove();
+    const option = new Option(title, 'youtube:' + id, false, true);
+    option.dataset.youtube = '';
+    songSelect.add(option);
+    songSelect.value = option.value;
+    current.selectedVideo = id;
+    renderQueue(current);
+    el('karaoke-video-status').textContent = 'Song selected. Join the queue to sing it.';
+    renderLine(current);
+    el('singer-signup').scrollIntoView({block:'nearest'});
+    el('singer-name').focus({preventScroll:true});
+  }
+
+  window.clubStage = {open, close, mute, selectVideo};
   const params = new URLSearchParams(location.search);
   const room = params.get('lyrics');
   if (room && /^(?:city-[a-z0-9-]{2,24}|nationwide|bay-stl)$/.test(room)) {

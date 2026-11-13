@@ -154,3 +154,23 @@ button.button,.filter {min-height:44px}
 .karaoke-youtube details{margin-top:10px}
 .karaoke-youtube summary{cursor:pointer;font-size:14px}
 .karaoke-youtube-player{display:block;width:100%;min-height:200px;aspect-ratio:16/9;margin-top:10px;border:0;border-radius:8px;background:#000}
+
+.karaoke-mode .room-layout {grid-template-columns:minmax(0,1fr)}
+.karaoke-main-stage {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:10px}
+.karaoke-singer-pane,.karaoke-song-pane {min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:12px}
+.karaoke-main-stage h3 {margin:0 0 10px}
+#karaoke-singer-video:empty + p {display:grid;place-content:center;min-height:205px;text-align:center}
+.karaoke-main-stage .stage-screen {margin:0;padding:0;border:0}
+.karaoke-main-stage .party-tile {width:100%;aspect-ratio:16/9}
+.karaoke-mode .party-grid {display:flex;flex-wrap:wrap;max-height:240px;overflow:auto}
+.karaoke-mode .party-grid .party-tile {width:clamp(105px,18vw,160px)}
+.stage-countdown {text-align:center;color:var(--orange);font:800 clamp(27px,5vw,58px)/1.1 var(--display);padding:14px 0}
+.karaoke-song-pane .karaoke-youtube-player,.stage-popout-view .karaoke-youtube-player {display:block;width:100%;aspect-ratio:16/9;min-height:200px;border:0;border-radius:8px}
+.karaoke-search-results {display:grid;gap:6px;margin:8px 0}
+.karaoke-search-results button {white-space:normal;text-align:left;justify-content:flex-start}
+.karaoke-youtube #karaoke-video-form {margin-top:14px}
+@media(max-width:680px) {
+  .karaoke-main-stage {grid-template-columns:minmax(0,1fr)}
+  .karaoke-main-stage .party-tile {max-height:230px}
+  .karaoke-mode .party-grid .party-tile {width:105px}
+}

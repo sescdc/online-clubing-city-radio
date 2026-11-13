@@ -118,25 +118,6 @@
     el('karaoke-stop').focus({preventScroll: true});
   }
 
-  function playYouTube(id) {
-    window.clubStage.mute();
-    showStage('YouTube karaoke', 'Close video');
-    const player = document.createElement('iframe');
-    player.className = 'karaoke-youtube-player';
-    player.title = 'YouTube karaoke video';
-    player.src = 'https://www.youtube-nocookie.com/embed/' + id + '?playsinline=1';
-    player.allow = 'encrypted-media; fullscreen; picture-in-picture';
-    player.allowFullscreen = true;
-    player.referrerPolicy = 'strict-origin-when-cross-origin';
-    el('karaoke-video').append(player);
-    playbackStatus.textContent = 'Tap play to sing along on this device.';
-    const link = el('karaoke-download');
-    link.href = 'https://www.youtube.com/watch?v=' + id;
-    link.textContent = 'Watch on YouTube';
-    link.hidden = false;
-    focusStage();
-  }
-
   function play(song) {
     window.clubStage.mute();
     showStage(song.title + ' · ' + song.artist);
@@ -145,7 +126,16 @@
     focusStage();
   }
 
-  el('karaoke-search-form').addEventListener('submit', event => {
+  const results = el('karaoke-search-results');
+  const searchStatus = el('karaoke-search-status');
+  const searchLink = el('karaoke-youtube-search');
+  let searchVersion = 0;
+  let inRoomSearch = false;
+  fetch('/api/karaoke/search').then(response => response.json()).then(data => {
+    inRoomSearch = data.available === true;
+  }).catch(() => {});
+
+  el('karaoke-search-form').addEventListener('submit', async event => {
     const query = search.value.trim();
     if (!query) {
       event.preventDefault();
@@ -153,19 +143,55 @@
       search.reportValidity();
       return;
     }
-    el('karaoke-search-query').value = query + ' karaoke with lyrics';
+    const version = ++searchVersion;
+    const url = new URL('https://www.youtube.com/results');
+    const terms = query + ' karaoke with lyrics';
+    url.searchParams.set('search_query', terms);
+    el('karaoke-search-query').value = terms;
+    searchLink.href = url.href;
+    searchLink.hidden = false;
+    results.replaceChildren();
+    if (!inRoomSearch) {
+      searchStatus.textContent = 'In YouTube, tap Share and Copy link. Paste it below to select your song.';
+      return;
+    }
+    event.preventDefault();
+    searchStatus.textContent = 'Searching…';
+    try {
+      const response = await fetch('/api/karaoke/search?q=' + encodeURIComponent(query));
+      const data = await response.json();
+      if (version !== searchVersion) return;
+      if (!data.available || !data.videos.length) {
+        searchStatus.textContent = 'Open the YouTube results, then paste your song’s Share link below.';
+        searchLink.focus();
+        return;
+      }
+      searchStatus.textContent = 'Select a song for the stage.';
+      for (const video of data.videos) {
+        if (!/^[A-Za-z0-9_-]{11}$/.test(video.id)) continue;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'button outline';
+        const title = video.title;
+        button.textContent = title + ' · ' + video.channel;
+        button.addEventListener('click', () => window.clubStage.selectVideo(video.id, title));
+        results.append(button);
+      }
+    } catch {
+      if (version === searchVersion) searchStatus.textContent = 'Open the YouTube results, then paste your song’s Share link below.';
+    }
   });
   search.addEventListener('input', () => search.setCustomValidity(''));
 
   el('karaoke-video-form').addEventListener('submit', event => {
     event.preventDefault();
     const id = youtubeVideoId(videoLink.value.trim());
-    videoStatus.textContent = id ? '' : 'Paste a YouTube video link, such as a link from Share.';
-    if (id) playYouTube(id);
+    videoStatus.textContent = id ? '' : 'Paste a YouTube video link from Share.';
+    if (id) window.clubStage.selectVideo(id);
     else videoLink.focus();
   });
   el('karaoke-stop').addEventListener('click', () => {
-    const returnTo = el('karaoke-video').querySelector('iframe') ? videoLink : el('singer-practice');
+    const returnTo = el('singer-practice');
     stop();
     if (returnTo.getClientRects().length) returnTo.focus({preventScroll: true});
   });
@@ -178,7 +204,10 @@
       search.setCustomValidity('');
       videoLink.value = '';
       videoStatus.textContent = '';
-      el('karaoke-solo').open = false;
+      searchVersion += 1;
+      searchStatus.textContent = '';
+      results.replaceChildren();
+      searchLink.hidden = true;
     },
     stop,
     practice: play
