@@ -7,6 +7,7 @@
   const signup = el('singer-form');
   const start = el('singer-start');
   const leave = el('singer-leave');
+  const practice = el('singer-practice');
   const status = el('singer-status');
   const list = el('singer-list');
   let current = null;
@@ -23,12 +24,12 @@
   for (const track of tracks.values()) {
     const option = document.createElement('option');
     option.value = track.id;
-    option.textContent = track.title + ' · ' + track.genre;
+    option.textContent = track.title;
     el('singer-song').append(option);
   }
 
   function audioSource(track) {
-    if (!track || track.id === audioTrack) return;
+    if (!track || (track.id === audioTrack && !audio.error)) return;
     audioTrack = track.id;
     audio.src = track.audio;
     audio.load();
@@ -38,7 +39,8 @@
     playAttempt += 1;
     soundEnabled = false;
     audio.pause();
-    sound.textContent = 'Enable sound';
+    audio.muted = false;
+    sound.textContent = 'Play backing track';
     audioStatus.textContent = '';
   }
 
@@ -66,13 +68,13 @@
       if (current !== session || playAttempt !== attempt) return;
       mute();
       audioStatus.textContent = error.name === 'NotAllowedError'
-        ? 'Tap Enable sound to start the backing track.'
-        : 'The backing track could not load. Tap Enable sound to retry.';
+        ? 'Tap Play backing track to hear the music.'
+        : 'The backing track could not load. Tap Play backing track to retry.';
     });
   }
 
   audio.addEventListener('loadedmetadata', () => {
-    if (current?.live) positionAudio(current, true);
+    if (current?.live && tracks.get(current.live.track)?.id === audioTrack) positionAudio(current, true);
   });
   audio.addEventListener('playing', () => {
     if (soundEnabled && current) audioStatus.textContent = 'Backing track playing.';
@@ -81,7 +83,7 @@
     if (!current?.live || !soundEnabled) return;
     mute();
     audioTrack = null;
-    audioStatus.textContent = 'The backing track could not load. Tap Enable sound to retry.';
+    audioStatus.textContent = 'The backing track could not load. Tap Play backing track to retry.';
   });
   sound.addEventListener('click', () => {
     if (!current?.live) return;
@@ -110,6 +112,7 @@
     const turn = session.live;
     const track = turn && tracks.get(turn.track);
     if (!track || session.now + performance.now() - session.clock >= turn.ends_at) {
+      if (turn && !audio.paused) audio.pause();
       el('stage-performer').textContent = '';
       el('stage-lyric').textContent = 'Waiting for a singer';
       el('stage-next-line').textContent = '';
@@ -118,10 +121,9 @@
     const bar = Math.floor(elapsed(session) * track.bpm / 240);
     el('stage-performer').textContent = turn.singer + ' · ' + track.title;
     const line = track.lyrics[Math.min(bar, track.lyrics.length - 1)];
-    if (el('stage-lyric').textContent !== line) {
-      el('stage-lyric').textContent = line;
-      el('stage-next-line').textContent = track.lyrics[bar + 1] ?? '';
-    }
+    const nextLine = track.lyrics[bar + 1] ?? '';
+    if (el('stage-lyric').textContent !== line) el('stage-lyric').textContent = line;
+    if (el('stage-next-line').textContent !== nextLine) el('stage-next-line').textContent = nextLine;
   }
 
   function renderQueue(session) {
@@ -129,12 +131,16 @@
     const own = session.turns.find(turn => turn.id === session.own);
     const waiting = session.turns.filter(turn => turn.started_at === null);
     const ready = own && !session.live && waiting[0]?.id === own.id;
-    signup.hidden = Boolean(own);
+    el('singer-submit').hidden = Boolean(own);
+    el('singer-name').hidden = el('singer-name-label').hidden = Boolean(own);
+    el('singer-name').required = !own;
+    practice.disabled = Boolean(session.busy || session.live);
+    el('singer-song').disabled = Boolean(session.busy);
     el('singer-turn').hidden = !own;
     start.hidden = !ready;
     start.disabled = Boolean(session.busy);
     leave.disabled = Boolean(session.busy);
-    leave.textContent = own?.started_at ? 'End my song' : 'Leave list';
+    leave.textContent = own?.started_at ? 'End song' : 'Leave queue';
     el('singer-submit').disabled = Boolean(session.busy);
     el('singer-empty').hidden = session.turns.length > 0;
     const signature = JSON.stringify([session.turns, session.own]);
@@ -156,17 +162,24 @@
     session.clock = (performance.now() + requestStarted) / 2;
     session.turns = data.turns;
     session.live = data.turns.find(turn => turn.started_at !== null);
+    if (session.own && !session.turns.some(turn => turn.id === session.own)) {
+      session.own = null;
+      try { sessionStorage.removeItem('club-turn-' + session.room); } catch {}
+      if (!session.display) status.textContent = previous ? 'Your turn ended.' : 'Your queue entry expired. Join again to sing.';
+    }
     const next = session.live ?? session.turns[0];
-    sound.disabled = !session.live;
+    sound.hidden = !session.live;
     window.clubParty.singer(session.room, session.live?.performer_id ?? null, data.now);
     if (previous?.id !== session.live?.id) {
       if (session.live) {
+        window.clubKaraoke.stop();
+        el('karaoke-solo').open = false;
         const track = tracks.get(session.live.track);
         if (soundEnabled && (audioTrack !== track?.id || audio.paused)) playAudio(session, track);
         else {
           audioSource(track);
           if (soundEnabled) positionAudio(session, true);
-          else audioStatus.textContent = 'Enable sound to hear the backing track.';
+          else audioStatus.textContent = 'Tap Play backing track to hear the music.';
         }
       } else {
         audio.pause();
@@ -202,23 +215,33 @@
   async function mutate(session, payload) {
     session.busy = true;
     session.revision += 1;
-    const requestStarted = performance.now();
     renderQueue(session);
     status.textContent = '';
     try {
+      if (payload.action === 'start') {
+        const turn = session.turns.find(item => item.id === session.own);
+        const party = await window.clubParty.joinSinger(turn.singer);
+        if (current !== session) return;
+        if (!party) throw new Error('The singer screen closed. Try starting your song again.');
+        payload.party = party;
+      }
+      const requestStarted = performance.now();
       const data = await api(session, payload);
       if (current !== session) return;
       if (payload.action === 'join') {
         session.own = data.id;
         try { sessionStorage.setItem('club-turn-' + session.room, String(data.id)); } catch {}
-        status.textContent = 'You’re on the singer list.';
+        status.textContent = 'You joined the queue.';
       } else if (payload.action === 'leave') {
         session.own = null;
         try { sessionStorage.removeItem('club-turn-' + session.room); } catch {}
-        status.textContent = 'You left the singer list.';
+        status.textContent = 'You left the queue.';
       } else {
         apply(session, data, requestStarted);
-        status.textContent = 'You’re on stage. Turn on your mic if it’s off.';
+        audio.muted = false;
+        if (session.live) playAudio(session, tracks.get(session.live.track));
+        status.textContent = 'You’re on stage. Turn on your mic when ready.';
+        el('party-mic').focus({preventScroll:true});
       }
     } catch (error) {
       if (current !== session) return;
@@ -243,19 +266,21 @@
     }
     void mutate(current, {action:'join', name, track:el('singer-song').value});
   });
+  practice.addEventListener('click', () => {
+    if (current && !current.live) window.clubKaraoke.practice(tracks.get(el('singer-song').value));
+  });
   start.addEventListener('click', () => {
     const session = current;
     if (!session || session.busy || start.hidden) return;
-    const party = window.clubParty.identity();
-    if (!party || party.room !== session.room) {
-      status.textContent = 'Join the singer screen before starting your song.';
-      el('party-name').focus();
-      return;
-    }
     const own = session.turns.find(turn => turn.id === session.own);
     if (!own) return;
-    playAudio(session, tracks.get(own.track));
-    void mutate(session, {action:'start', id:own.id, party});
+    // Prime the player on the tap. Release the audio once the room confirms the turn.
+    const track = tracks.get(own.track);
+    window.clubKaraoke.stop();
+    audioSource(track);
+    audio.muted = true;
+    void audio.play().catch(() => {});
+    void mutate(session, {action:'start', id:own.id});
   });
   leave.addEventListener('click', () => {
     if (!current || current.busy || !current.own) return;
@@ -273,7 +298,7 @@
     audio.removeAttribute('src');
     audio.load();
     audioTrack = null;
-    sound.disabled = true;
+    sound.hidden = true;
   }
 
   function open(room, title, display = false) {
@@ -287,7 +312,7 @@
     url.searchParams.set('title', title);
     el('stage-popout').href = url.href;
     status.textContent = '';
-    el('singer-name').value = el('party-name').value;
+    if (el('party-name').value) el('singer-name').value = el('party-name').value;
     el('singer-song').selectedIndex = 0;
     renderLine(session);
     renderQueue(session);

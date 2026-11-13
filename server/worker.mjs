@@ -107,6 +107,9 @@ async function handleParty(request, env, path) {
       db.prepare(`DELETE FROM party_meetings WHERE room = ? AND (host = ? OR guest = ?)
         AND EXISTS (SELECT 1 FROM party_members WHERE room = ? AND id = ? AND token = ?)`)
         .bind(room, id, id, room, id, token),
+      db.prepare(`DELETE FROM karaoke_turns WHERE room = ? AND performer_id = ?
+        AND EXISTS (SELECT 1 FROM party_members WHERE room = ? AND id = ? AND token = ?)`)
+        .bind(room, id, room, id, token),
       db.prepare('DELETE FROM party_members WHERE room = ? AND id = ? AND token = ?').bind(room, id, token)
     ]);
     return reply({});
@@ -220,9 +223,8 @@ async function handleKaraoke(request, env) {
     }
     if (!Number.isSafeInteger(input.id) || input.id < 1) return reply({error: 'Choose a valid turn.'}, 400);
     if (input.action === 'leave') {
-      const result = await db.prepare('DELETE FROM karaoke_turns WHERE room = ? AND id = ? AND singer_key = ?')
+      await db.prepare('DELETE FROM karaoke_turns WHERE room = ? AND id = ? AND singer_key = ?')
         .bind(room, input.id, input.key).run();
-      if (!result.meta.changes) return reply({error: 'This turn is no longer on your list.'}, 409);
       return reply({ok: true});
     }
     if (input.action === 'start') {

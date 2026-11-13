@@ -273,7 +273,7 @@ function setMusicMode(mode, startOnTap = false) {
   } else {
     stopRadio();
     const title = byId('deck-title').textContent;
-    window.clubKaraoke.open(current.station, current.room, title);
+    window.clubKaraoke.open(current.room);
     window.clubStage.open(current.room, title);
   }
 }

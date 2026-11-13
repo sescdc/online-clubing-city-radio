@@ -382,17 +382,18 @@
 
   form.addEventListener('submit', async event => {
     event.preventDefault();
-    const displayName = name.value.trim();
-    if (!room || active || joining) return;
+    try { await joinRoom(name.value.trim()); }
+    catch (error) { status.textContent = error.message; }
+  });
+
+  async function joinRoom(displayName, focusMic = true) {
+    if (active && !active.channel) return identity(active);
+    if (!room || active || joining) throw new Error('The video room is busy. Try again.');
     if (!displayName) {
-      status.textContent = 'Enter a display name.';
       name.focus();
-      return;
+      throw new Error('Enter a display name.');
     }
-    if (!window.RTCPeerConnection) {
-      status.textContent = 'This browser does not support video rooms.';
-      return;
-    }
+    if (!window.RTCPeerConnection) throw new Error('This browser does not support video rooms.');
     const request = ++attempt;
     const selected = room;
     joining = join.disabled = true;
@@ -401,8 +402,9 @@
       const ticket = await api('join', {room: selected, name: displayName});
       if (attempt !== request) {
         void api('leave', {...ticket, room: selected}).catch(() => {});
-        return;
+        return null;
       }
+      name.value = displayName;
       const view = tile({name: displayName}, true);
       const session = {...ticket, room: selected, name: displayName, view, tracks: {}, peers: new Map(), outgoing: [], cursor: 0, channel: '', members: [], pendingMedia: new Set()};
       active = session;
@@ -413,14 +415,18 @@
       count.textContent = '1 guest';
       status.textContent = '';
       updateControls(session);
-      kinds.audio.focus();
+      if (focusMic) kinds.audio.focus();
       void sync(session);
+      return identity(session);
     } catch (error) {
-      if (attempt === request) status.textContent = error.status ? error.message : 'Could not join. Try again.';
+      if (attempt !== request) return null;
+      const message = error.status ? error.message : 'Could not join the video room. Try again.';
+      status.textContent = message;
+      throw new Error(message);
     } finally {
       if (attempt === request) joining = join.disabled = false;
     }
-  });
+  }
 
   for (const [kind, button] of Object.entries(kinds)) {
     button.addEventListener('click', async () => {
@@ -479,7 +485,7 @@
   });
   window.addEventListener('pagehide', () => leave());
   window.clubParty = {
-    identity() { return active ? identity(active) : null; },
+    joinSinger(displayName) { return joinRoom(displayName, false); },
     singer(nextRoom, id, time) {
       if (active?.room === nextRoom && !active.channel) applySinger(active, id, time);
     },
