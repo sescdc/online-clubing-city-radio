@@ -477,6 +477,7 @@
       for (const track of Object.values(session.tracks)) track?.stop();
       clearPeers(session);
       if (session.channel) window.dispatchEvent(new CustomEvent('club-meeting', {detail: false}));
+      window.dispatchEvent(new CustomEvent('club-party-left', {detail: session.room}));
       void api('leave', identity(session)).catch(() => {});
     }
     grid.replaceChildren();
@@ -540,6 +541,7 @@
     const selected = room;
     joining = join.disabled = true;
     status.textContent = 'Joining the video room…';
+    window.dispatchEvent(new CustomEvent('club-party-joining', {detail: selected}));
     try {
       const ticket = await api('join', {room: selected, name: displayName});
       if (attempt !== request) {
@@ -570,6 +572,7 @@
           }
         }).finally(() => { if (active === session) backdropFile.disabled = false; });
       } else backdropFile.disabled = false;
+      window.dispatchEvent(new CustomEvent('club-party-joined', {detail: selected}));
       void sync(session);
       return identity(session);
     } catch (error) {
@@ -692,6 +695,7 @@
       renderSpotlight();
     },
     joinSinger(displayName) { return joinRoom(displayName, false); },
+    isInside(selected) { return active?.room === selected && !active.channel; },
     singer(nextRoom, id, time) {
       if (active?.room === nextRoom && !active.channel) applySinger(active, id, time);
     },

@@ -75,11 +75,18 @@ const byId = id => document.getElementById(id);
 const deck = byId('radio-deck');
 const search = byId('city-search');
 const grid = byId('city-grid');
+const radioAudio = document.createElement('audio');
+radioAudio.hidden = true;
+radioAudio.disableRemotePlayback = true;
+byId('player').append(radioAudio);
+// Prime this same element from the join gesture using a short silent WAV.
+const silentAudio = 'data:audio/wav;base64,UklGRiwAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQgAAACAgICAgICAgA==';
 const hour = 60 * 60 * 1000;
 const timeFormat = new Intl.DateTimeFormat(undefined, {hour:'numeric',minute:'2-digit',timeZoneName:'short'});
 let current = null;
 let musicMode = 'radio';
 let radioStartupTimer;
+let radioPlayback;
 let filter = 'All cities';
 let opener = null;
 let lastHour = -1;
@@ -185,21 +192,24 @@ function updateSavedButton() {
 
 function stopRadio() {
   clearTimeout(radioStartupTimer);
-  const player = byId('player');
-  const audio = player.querySelector('audio');
-  player.replaceChildren();
-  if (audio) {
-    audio.pause();
-    audio.removeAttribute('src');
-    audio.load();
+  radioPlayback?.abort();
+  radioPlayback = null;
+  if (radioAudio.hasAttribute('src')) {
+    radioAudio.pause();
+    radioAudio.removeAttribute('src');
+    radioAudio.load();
   }
   byId('station-link').hidden = true;
   byId('radio-status').textContent = '';
 }
 
-function showRadio(station, startOnTap) {
+function showRadio() {
   stopRadio();
-  const player = byId('player');
+  const {station, room} = current;
+  if (!window.clubParty.isInside(room)) {
+    byId('radio-status').textContent = 'Join the party to hear the music.';
+    return;
+  }
   const status = byId('radio-status');
   const stationLink = byId('station-link');
   if (!station.stream) {
@@ -208,39 +218,35 @@ function showRadio(station, startOnTap) {
     return;
   }
 
-  const audio = document.createElement('audio');
-  audio.src = station.stream;
-  audio.hidden = true;
-  audio.disableRemotePlayback = true;
-  player.append(audio);
+  radioPlayback = new AbortController();
+  const {signal} = radioPlayback;
+  radioAudio.src = station.stream;
   status.textContent = 'Connecting to ' + station.name + '…';
 
   function unavailable() {
-    if (!player.contains(audio)) return;
+    if (signal.aborted) return;
     stopRadio();
     status.textContent = 'Could not connect to ' + station.name + '. Choose Clubbin’ to retry.';
     stationLink.hidden = false;
   }
 
   radioStartupTimer = setTimeout(unavailable, 15000);
-  audio.addEventListener('error', unavailable);
-  audio.addEventListener('playing', () => {
-    if (!player.contains(audio)) return;
+  radioAudio.addEventListener('error', unavailable, {signal});
+  radioAudio.addEventListener('playing', () => {
+    if (signal.aborted) return;
     clearTimeout(radioStartupTimer);
     status.textContent = station.name + ' is playing live.';
-  });
-  audio.play().catch(error => {
-    if (!player.contains(audio)) return;
+  }, {signal});
+  radioAudio.play().catch(error => {
+    if (signal.aborted) return;
     if (error.name === 'NotAllowedError') {
       stopRadio();
-      status.textContent = startOnTap
-        ? 'Your browser blocked the music. Choose Clubbin’ to try again.'
-        : 'Choose Clubbin’ to enter with music.';
+      status.textContent = 'Your browser blocked the music. Choose Clubbin’ to try again.';
     } else unavailable();
   });
 }
 
-function setMusicMode(mode, startOnTap = false) {
+function setMusicMode(mode) {
   musicMode = mode;
   const radio = mode === 'radio';
   byId('mode-radio').setAttribute('aria-pressed', String(radio));
@@ -257,7 +263,7 @@ function setMusicMode(mode, startOnTap = false) {
   if (radio) {
     window.clubKaraoke.stop();
     window.clubStage.close();
-    showRadio(current.station, startOnTap);
+    showRadio();
   } else {
     stopRadio();
     const title = byId('deck-title').textContent;
@@ -284,7 +290,7 @@ function openRoom(station, national, trigger = null, match = false, mode = 'radi
   updateSavedButton();
   deck.hidden = false;
   if (previous?.room !== partyRoom || previous.station.id !== station.id || trigger) {
-    setMusicMode(mode, Boolean(trigger));
+    setMusicMode(mode);
   }
   setRoomURL(match ? 'bay-stl' : national ? 'nationwide' : station.id);
   for (const button of grid.querySelectorAll('[data-city]')) {
@@ -295,6 +301,20 @@ function openRoom(station, national, trigger = null, match = false, mode = 'radi
     byId('deck-title').focus({preventScroll:true});
   }
 }
+
+window.addEventListener('club-party-joining', ({detail: room}) => {
+  if (current?.room !== room || musicMode !== 'radio') return;
+  radioAudio.src = silentAudio;
+  void radioAudio.play().catch(() => {});
+});
+
+window.addEventListener('club-party-joined', ({detail: room}) => {
+  if (current?.room === room && musicMode === 'radio') showRadio();
+});
+
+window.addEventListener('club-party-left', ({detail: room}) => {
+  if (current?.room === room && musicMode === 'radio') showRadio();
+});
 
 window.addEventListener('club-meeting', event => {
   deck.classList.toggle('meeting-mode', event.detail);
@@ -312,7 +332,7 @@ window.addEventListener('club-meeting', event => {
 
 byId('mode-radio').addEventListener('click', () => {
   if (!current) return;
-  if (musicMode !== 'radio' || !byId('player').querySelector('audio')) setMusicMode('radio', true);
+  if (musicMode !== 'radio' || !radioPlayback) setMusicMode('radio');
   deck.scrollIntoView({block:'start'});
   byId('deck-title').focus({preventScroll:true});
 });
