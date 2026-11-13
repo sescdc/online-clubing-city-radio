@@ -66,9 +66,11 @@
     video.muted = video.playsInline = true;
     video.srcObject = new MediaStream([camera]);
 
+    const settings = camera.getSettings();
+    const portrait = settings.height > settings.width;
     const canvas = document.createElement('canvas');
-    canvas.width = 640;
-    canvas.height = 360;
+    canvas.width = portrait ? 360 : 640;
+    canvas.height = portrait ? 640 : 360;
     const {width, height} = canvas;
     const context = canvas.getContext('2d');
     const scene = document.createElement('canvas');
@@ -80,11 +82,14 @@
     let stopped = false;
     let timer;
     let sceneVersion = 0;
-    let ready = false;
+    let sceneReady = false;
     let lastTime = -1;
+    let lastPerson = 0;
+    let resolveFirstFrame;
+    const firstFrame = new Promise(resolve => { resolveFirstFrame = resolve; });
     const input = document.createElement('canvas');
-    input.width = 256;
-    input.height = 144;
+    input.width = portrait ? 180 : 320;
+    input.height = portrait ? 320 : 180;
     const inputContext = input.getContext('2d', {willReadFrequently: true});
     const mask = document.createElement('canvas');
     mask.width = input.width;
@@ -97,11 +102,24 @@
     const foregroundContext = foreground.getContext('2d');
 
     async function drawFrame(model) {
+      if (!sceneReady) return;
       drawCover(foregroundContext, video, width, height);
       inputContext.drawImage(foreground, 0, 0, input.width, input.height);
-      const {data} = await model.segmentPerson(input, {internalResolution: 'medium', segmentationThreshold: .65});
+      const {data} = await model.segmentPerson(input, {internalResolution: 'medium', segmentationThreshold: .5});
       if (stopped) return;
-      for (let i = 0; i < data.length; i++) pixels.data[i * 4 + 3] = data[i] * 255;
+
+      let personPixels = 0;
+      for (let i = 0; i < data.length; i++) {
+        personPixels += data[i];
+        pixels.data[i * 4 + 3] = data[i] * 255;
+      }
+      const now = performance.now();
+      if (personPixels < data.length * .005) {
+        // Hold the previous composite through brief detection misses.
+        if (lastPerson && now - lastPerson > 2500) throw new Error('No person detected.');
+        return;
+      }
+      lastPerson = now;
       maskContext.putImageData(pixels, 0, 0);
       context.clearRect(0, 0, width, height);
       context.drawImage(mask, 0, 0, width, height);
@@ -110,6 +128,7 @@
       context.globalCompositeOperation = 'destination-over';
       context.drawImage(scene, 0, 0);
       context.globalCompositeOperation = 'source-over';
+      resolveFirstFrame();
     }
 
     async function nextFrame(model) {
@@ -128,19 +147,18 @@
       const url = choice === 'custom' ? 'data:image/jpeg;base64,' + photo
         : choice === 'city' ? '/hero.webp'
         : ['wave', 'sunset', 'studio'].includes(choice) ? null : '/club-' + choice + '.webp';
-      // Start from a fully opaque scene while the image and model load.
-      drawScene(sceneContext, choice, null, width, height);
-      context.drawImage(scene, 0, 0);
+      let image;
       if (url) {
-        const image = new Image();
+        image = new Image();
         image.src = url;
         await image.decode();
-        if (stopped || version !== sceneVersion) return false;
-        drawScene(sceneContext, choice, image, width, height);
-        context.drawImage(scene, 0, 0);
       }
+      if (stopped || version !== sceneVersion) return false;
+      drawScene(sceneContext, choice, image, width, height);
+      sceneReady = true;
       await startup;
-      return !stopped && version === sceneVersion && ready;
+      await firstFrame;
+      return !stopped && version === sceneVersion;
     }
 
     const startup = (async () => {
@@ -148,7 +166,6 @@
       const model = await loadModel();
       if (stopped) return;
       await nextFrame(model);
-      ready = true;
     })();
     // A scene may still be decoding when startup fails.
     void startup.catch(() => {});
@@ -158,6 +175,7 @@
       setScene,
       stop() {
         stopped = true;
+        resolveFirstFrame();
         clearTimeout(timer);
         track.stop();
         video.pause();

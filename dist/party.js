@@ -312,7 +312,7 @@
       if (active !== session || session.camera !== camera) return;
       void stopCamera(session);
       updateControls(session);
-      backdropStatus.textContent = 'The virtual background could not start. Try again or choose Club default and turn on your camera.';
+      backdropStatus.textContent = 'Virtual background paused. Face the camera in good light, then turn your camera back on.';
     }
 
     if (!choice) {
@@ -336,11 +336,12 @@
       }
       const effect = session.videoBackground;
       backdropStatus.textContent = 'Applying virtual background…';
-      const scene = effect.setScene(choice, customPhoto);
-      const changes = session.tracks.video === effect.track ? [] : sendTrack(session, 'video', effect.track);
       const timeout = setTimeout(() => { if (current()) backgroundFailed(); }, 15000);
-      void Promise.all([scene, changes]).then(([ready, results]) => {
+      void effect.setScene(choice, customPhoto).then(async ready => {
         if (!current() || !ready) return;
+        const results = session.tracks.video === effect.track ? [] : await sendTrack(session, 'video', effect.track);
+        if (!current()) return;
+        updateControls(session);
         backdropStatus.textContent = results.some(result => result.status === 'rejected')
           ? 'A guest could not receive your virtual background.' : 'Virtual background on.';
       }).catch(error => { if (current()) backgroundFailed(error); }).finally(() => clearTimeout(timeout));
@@ -570,7 +571,7 @@
 
   function updateControls(session) {
     for (const [kind, button] of Object.entries(kinds)) {
-      const on = Boolean(session.tracks[kind]);
+      const on = Boolean(kind === 'video' ? session.camera : session.tracks[kind]);
       button.setAttribute('aria-pressed', String(on));
       button.textContent = labels[kind] + (on ? ' on' : ' off');
     }
