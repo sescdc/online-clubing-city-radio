@@ -7,6 +7,7 @@
 <meta name="description" content="Tune into local hip-hop and R&B radio or meet on one nationwide floor.">
 <title>Online Clubing | Hip-Hop Radio</title>
 <link rel="stylesheet" href="club.css">
+<script src="party-background.js" defer></script>
 <script src="party.js" defer></script>
 <script src="karaoke.js" defer></script>
 <script src="stage.js" defer></script>
@@ -65,9 +66,9 @@
   <button id="party-meet-toggle" class="button outline compact" type="button" aria-expanded="false" aria-controls="party-meet">Meet &amp; Greet</button>
   <details class="party-backdrop">
     <summary>Background</summary>
-    <label for="party-backdrop">Choose a club scene</label>
+    <label for="party-backdrop">Choose a virtual background</label>
     <select id="party-backdrop">
-      <option value="">Club default</option>
+      <option value="">Club default (no video effect)</option>
       <option value="neon">Neon Underground</option>
       <option value="vip">Gold VIP Lounge</option>
       <option value="rooftop">Skyline Rooftop</option>
@@ -85,7 +86,7 @@
       <option value="custom" hidden>My upload</option>
     </select>
     <div id="party-backdrop-preview" class="party-tile" aria-hidden="true"></div>
-    <label for="party-backdrop-file">Upload a photo to show in the room</label>
+    <label for="party-backdrop-file">Upload your own background photo</label>
     <input id="party-backdrop-file" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif">
     <p id="party-backdrop-status" class="feedback" role="status"></p>
   </details>

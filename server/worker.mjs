@@ -353,13 +353,14 @@ export default {
     const key = path === '/' ? 'index.html' : path.slice(1);
     if (!Object.hasOwn(assets, key)) return new Response('Not found', {status: 404});
     if (!['GET', 'HEAD'].includes(request.method)) return new Response(null, {status: 405});
-    const [type, content] = assets[key];
+    const [type, content, encoding] = assets[key];
     const isAudio = type === 'audio/mpeg';
-    const data = /\.(webp|gz|mp3)$/.test(key) ? Uint8Array.from(atob(content), byte => byte.charCodeAt(0)) : content;
+    const data = encoding || /\.(webp|gz|mp3)$/.test(key) ? Uint8Array.from(atob(content), byte => byte.charCodeAt(0)) : content;
     const responseHeaders = {
       'Content-Type': type,
       'Cache-Control': key.endsWith('.webp') || isAudio ? 'public, max-age=86400' : 'no-cache'
     };
+    if (encoding) responseHeaders['Content-Encoding'] = encoding;
     if (isAudio) {
       responseHeaders['Accept-Ranges'] = 'bytes';
       const range = request.headers.get('Range');

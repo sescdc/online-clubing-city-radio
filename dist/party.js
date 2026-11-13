@@ -282,6 +282,73 @@
     session.peers.clear();
   }
 
+  function sendTrack(session, kind, track) {
+    session.tracks[kind] = track;
+    if (kind === 'video') {
+      session.view.video.srcObject = track ? new MediaStream([track]) : null;
+      if (track) void session.view.video.play().catch(() => {});
+    }
+    return Promise.allSettled([...session.peers.values()].flatMap(peer => peer.senders[kind]?.replaceTrack(track) ?? []));
+  }
+
+  function stopCamera(session) {
+    session.camera?.stop();
+    session.camera = null;
+    session.videoBackground?.stop();
+    session.videoBackground = null;
+    backdropStatus.textContent = '';
+    return sendTrack(session, 'video', null);
+  }
+
+  function applyVideoBackground(session) {
+    const camera = session.camera;
+    if (!camera) return;
+    const choice = backdrop.value;
+    const revision = session.backgroundRevision = (session.backgroundRevision ?? 0) + 1;
+    const current = () => active === session && session.camera === camera && revision === session.backgroundRevision;
+
+    function backgroundFailed(error) {
+      if (error) console.warn('Virtual background failed', error);
+      if (active !== session || session.camera !== camera) return;
+      void stopCamera(session);
+      updateControls(session);
+      backdropStatus.textContent = 'The virtual background could not start. Try again or choose Club default and turn on your camera.';
+    }
+
+    if (!choice) {
+      session.videoBackground?.stop();
+      session.videoBackground = null;
+      backdropStatus.textContent = '';
+      void sendTrack(session, 'video', camera).then(results => {
+        if (current() && results.some(result => result.status === 'rejected')) {
+          backdropStatus.textContent = 'A guest could not receive your camera.';
+        }
+      });
+      return;
+    }
+
+    try {
+      if (!session.videoBackground) {
+        const effect = window.createPartyVideoBackground(camera, error => {
+          if (session.videoBackground === effect) backgroundFailed(error);
+        });
+        session.videoBackground = effect;
+      }
+      const effect = session.videoBackground;
+      backdropStatus.textContent = 'Applying virtual background…';
+      const scene = effect.setScene(choice, customPhoto);
+      const changes = session.tracks.video === effect.track ? [] : sendTrack(session, 'video', effect.track);
+      const timeout = setTimeout(() => { if (current()) backgroundFailed(); }, 15000);
+      void Promise.all([scene, changes]).then(([ready, results]) => {
+        if (!current() || !ready) return;
+        backdropStatus.textContent = results.some(result => result.status === 'rejected')
+          ? 'A guest could not receive your virtual background.' : 'Virtual background on.';
+      }).catch(error => { if (current()) backgroundFailed(error); }).finally(() => clearTimeout(timeout));
+    } catch (error) {
+      backgroundFailed(error);
+    }
+  }
+
   function switchChannel(session, channel) {
     if (session.channel === channel) return;
     clearPeers(session);
@@ -293,6 +360,8 @@
     session.cursor = 0;
     session.outgoing = [];
     // Restart muted and with the camera off at both privacy boundaries.
+    session.mediaRevision += 1;
+    void stopCamera(session);
     for (const track of Object.values(session.tracks)) track?.stop();
     session.tracks = {};
     session.view.video.srcObject = null;
@@ -474,6 +543,7 @@
     active = null;
     if (session) {
       clearTimeout(session.timer);
+      void stopCamera(session);
       for (const track of Object.values(session.tracks)) track?.stop();
       clearPeers(session);
       if (session.channel) window.dispatchEvent(new CustomEvent('club-meeting', {detail: false}));
@@ -506,6 +576,7 @@
     }
     element('party-audience').hidden = !session.audienceOnly;
     if (session.audienceOnly) {
+      if (session.camera) void stopCamera(session);
       for (const [kind, track] of Object.entries(session.tracks)) {
         track?.stop();
         session.tracks[kind] = null;
@@ -550,7 +621,7 @@
       }
       name.value = displayName;
       const view = tile({name: displayName}, true);
-      const session = {...ticket, room: selected, name: displayName, view, tracks: {}, peers: new Map(), audience: new Map(), outgoing: [], cursor: 0, channel: '', members: [], pendingMedia: new Set()};
+      const session = {...ticket, room: selected, name: displayName, view, tracks: {}, peers: new Map(), audience: new Map(), outgoing: [], cursor: 0, channel: '', members: [], mediaRevision: 0, pendingMedia: new Set()};
       active = session;
       const singerName = element('singer-name');
       if (!singerName.value) singerName.value = displayName;
@@ -565,8 +636,11 @@
         backdropFile.disabled = true;
         void uploadBackdrop(session, customPhoto).catch(() => {
           if (active === session) {
-            backdrop.value = savedBackdrop;
-            paintBackdrop(backdropPreview, savedBackdrop);
+            if (backdrop.value === 'custom') {
+              backdrop.value = savedBackdrop;
+              applyVideoBackground(session);
+            }
+            paintBackdrop(backdropPreview, backdrop.value);
             updateControls(session);
             backdropStatus.textContent = 'Your upload could not be shared in this room. Choose a photo to retry.';
           }
@@ -588,12 +662,17 @@
   for (const [kind, button] of Object.entries(kinds)) {
     button.addEventListener('click', async () => {
       const session = active;
-      if (!session || session.audienceOnly || (kind === 'audio' && micLocked(session))) return;
+      if (!session || session.pendingMedia.has(kind) || session.audienceOnly || (kind === 'audio' && micLocked(session))) return;
       button.disabled = true;
       session.pendingMedia.add(kind);
-      const channel = session.channel;
+      const revision = session.mediaRevision;
+      const current = () => active === session && revision === session.mediaRevision && !session.audienceOnly;
       try {
         openBrowser.hidden = true;
+        if (kind === 'video' && session.camera) {
+          await stopCamera(session);
+          return;
+        }
         const previous = session.tracks[kind];
         let track = null;
         if (previous) previous.stop();
@@ -606,32 +685,34 @@
             stream = await navigator.mediaDevices.getUserMedia(constraints);
           } catch (error) {
             if (kind !== 'video' || !['OverconstrainedError', 'ConstraintNotSatisfiedError'].includes(error.name)
-              || active !== session || channel !== session.channel) throw error;
+              || !current()) throw error;
             stream = await navigator.mediaDevices.getUserMedia({video: true});
           }
           [track] = kind === 'video' ? stream.getVideoTracks() : stream.getAudioTracks();
           if (!track) throw new DOMException('No ' + kind + ' device track', 'NotFoundError');
-          if (active !== session || channel !== session.channel || session.audienceOnly || (kind === 'audio' && micLocked(session))) {
+          if (!current() || (kind === 'audio' && micLocked(session))) {
             track.stop();
             return;
           }
           track.addEventListener('ended', () => {
-            if (active !== session || session.tracks[kind] !== track) return;
-            session.tracks[kind] = null;
+            if (active !== session) return;
+            if (kind === 'video' && session.camera === track) void stopCamera(session);
+            if (kind === 'audio' && session.tracks.audio === track) void sendTrack(session, 'audio', null);
             updateControls(session);
           });
         }
-        session.tracks[kind] = track;
         if (kind === 'video') {
-          session.view.video.srcObject = track ? new MediaStream([track]) : null;
-          if (track) void session.view.video.play().catch(() => {});
+          session.camera = track;
+          status.textContent = '';
+          applyVideoBackground(session);
+          return;
         }
-        const changes = await Promise.allSettled([...session.peers.values()].flatMap(peer => peer.senders[kind]?.replaceTrack(track) ?? []));
-        if (active !== session) return;
+        const changes = await sendTrack(session, kind, track);
+        if (!current()) return;
         status.textContent = changes.some(result => result.status === 'rejected') ? 'A guest could not receive your ' + labels[kind].toLowerCase() + '.' : '';
         updateControls(session);
       } catch (error) {
-        if (active === session && channel === session.channel) status.textContent = describeMediaError(kind, error);
+        if (current()) status.textContent = describeMediaError(kind, error);
       } finally {
         session.pendingMedia.delete(kind);
         if (active === session) updateControls(session);
@@ -649,7 +730,10 @@
     }
     backdropStatus.textContent = '';
     paintBackdrop(backdropPreview, backdrop.value);
-    if (active) updateControls(active);
+    if (active) {
+      applyVideoBackground(active);
+      updateControls(active);
+    }
   });
   backdropFile.addEventListener('change', async () => {
     const session = active;
@@ -669,7 +753,8 @@
       session.view.card.dataset.backdrop = '';
       paintBackdrop(backdropPreview, 'custom');
       updateControls(session);
-      backdropStatus.textContent = 'Your photo is ready. It appears when your camera is off.';
+      if (session.camera) applyVideoBackground(session);
+      else backdropStatus.textContent = 'Your photo is ready. Turn on your camera to use it in your video.';
     } catch (error) {
       if (active === session) backdropStatus.textContent = error.message || 'Could not upload your photo.';
     } finally {

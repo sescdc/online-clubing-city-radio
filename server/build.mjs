@@ -1,10 +1,12 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { gzipSync } from 'node:zlib';
 
 const assetTypes = {
   'index.html': 'text/html; charset=utf-8',
   'club.js': 'text/javascript; charset=utf-8',
   'stage.js': 'text/javascript; charset=utf-8',
   'karaoke.js': 'text/javascript; charset=utf-8',
+  'party-background.js': 'text/javascript; charset=utf-8',
   'party.js': 'text/javascript; charset=utf-8',
   'club.css': 'text/css; charset=utf-8',
   'karaoke-city-lights.mp3': 'audio/mpeg',
@@ -19,6 +21,18 @@ const assets = {};
 for (const [name, type] of Object.entries(assetTypes)) {
   const file = await readFile(new URL('dist/' + name, root));
   assets[name] = [type, /\.(webp|gz|mp3)$/.test(name) ? file.toString('base64') : file.toString('utf8')];
+}
+
+// Serve the CPU model and its runtime from the same origin as the video room.
+const modelFiles = {
+  'tf.min.js': ['node_modules/@tensorflow/tfjs/dist/tf.min.js', 'text/javascript'],
+  'body-pix.min.js': ['node_modules/@tensorflow-models/body-pix/dist/body-pix.min.umd.js', 'text/javascript'],
+  'bodypix.json': ['server/models/bodypix.json', 'application/json'],
+  'group1-shard1of1.bin': ['server/models/group1-shard1of1.bin', 'application/octet-stream']
+};
+for (const [name, [source, type]] of Object.entries(modelFiles)) {
+  const file = await readFile(new URL(source, root));
+  assets['party-model/' + name] = [type, gzipSync(file).toString('base64'), 'gzip'];
 }
 
 const output = new URL('dist/server/', root);
