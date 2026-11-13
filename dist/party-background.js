@@ -18,11 +18,9 @@
   function loadModel() {
     modelPromise ??= (async () => {
       if (!window.tf) await loadScript('tf.min.js');
-      if (!window['body-pix']) await loadScript('body-pix.min.js');
       // Use the CPU backend so the effect also works without WebGL.
       await tf.setBackend('cpu');
-      return window['body-pix'].load({architecture: 'MobileNetV1', outputStride: 16, multiplier: .5,
-        quantBytes: 2, modelUrl: modelPath + 'bodypix.json'});
+      return tf.loadGraphModel(modelPath + 'selfie.json');
     })().catch(error => {
       modelPromise = null;
       throw error;
@@ -87,12 +85,16 @@
     let lastPerson = 0;
     let previousState;
     let model;
-    let framed = false;
     let resolveFirstFrame;
     const firstFrame = new Promise(resolve => { resolveFirstFrame = resolve; });
     const input = document.createElement('canvas');
-    input.width = portrait ? 180 : 320;
-    input.height = portrait ? 320 : 180;
+    input.width = input.height = 256;
+    // Preserve the camera aspect ratio in the square model input.
+    const scale = input.width / Math.max(width, height);
+    const inputWidth = Math.round(width * scale);
+    const inputHeight = Math.round(height * scale);
+    const inputX = Math.floor((input.width - inputWidth) / 2);
+    const inputY = Math.floor((input.height - inputHeight) / 2);
     const inputContext = input.getContext('2d', {willReadFrequently: true});
     const mask = document.createElement('canvas');
     mask.width = input.width;
@@ -111,33 +113,37 @@
     }
 
     async function drawFrame(model) {
-      if (!sceneReady) return;
+      if (!sceneReady || !model) return;
       drawCover(foregroundContext, video, width, height);
-      if (framed) {
-        context.drawImage(scene, 0, 0);
-        const size = Math.min(width, height) * .82;
-        context.save();
-        context.beginPath();
-        context.arc(width / 2, height / 2, size / 2, 0, Math.PI * 2);
-        context.clip();
-        drawCover(context, foreground, width, height);
-        context.restore();
-        report('framed');
-        resolveFirstFrame();
-        return;
-      }
-      if (!model) return;
-      inputContext.drawImage(foreground, 0, 0, input.width, input.height);
-      const {data} = await model.segmentPerson(input, {internalResolution: 'medium', segmentationThreshold: .35});
-      if (stopped || framed) return;
+      inputContext.fillStyle = '#000';
+      inputContext.fillRect(0, 0, input.width, input.height);
+      inputContext.drawImage(foreground, inputX, inputY, inputWidth, inputHeight);
+      const prediction = tf.tidy(() => {
+        const rgb = tf.browser.fromPixels(input).toFloat().div(255).expandDims();
+        return model.predict(rgb);
+      });
+      let confidence;
+      try { confidence = await prediction.data(); }
+      finally { prediction.dispose(); }
+      if (stopped) return;
 
       let personPixels = 0;
-      for (let i = 0; i < data.length; i++) {
-        personPixels += data[i];
-        pixels.data[i * 4 + 3] = data[i] * 255;
+      for (let y = inputY; y < inputY + inputHeight; y++) {
+        for (let x = inputX; x < inputX + inputWidth; x++) {
+          const i = y * input.width + x;
+          // Pull the mask inward by one model pixel to reduce color spill, then feather the edge.
+          const inward = Math.min(confidence[i],
+            confidence[y * input.width + Math.max(inputX, x - 1)],
+            confidence[y * input.width + Math.min(inputX + inputWidth - 1, x + 1)],
+            confidence[Math.max(inputY, y - 1) * input.width + x],
+            confidence[Math.min(inputY + inputHeight - 1, y + 1) * input.width + x]);
+          const edge = Math.max(0, Math.min(1, (inward - .58) / .28));
+          pixels.data[i * 4 + 3] = Math.round(255 * edge * edge * (3 - 2 * edge));
+          if (confidence[i] >= .86) personPixels++;
+        }
       }
       const now = performance.now();
-      if (personPixels < data.length * .005) {
+      if (personPixels < inputWidth * inputHeight * .005) {
         // Hold the previous composite through brief detection misses.
         if (!lastPerson || now - lastPerson > 2500) report('searching');
         return;
@@ -145,7 +151,7 @@
       lastPerson = now;
       maskContext.putImageData(pixels, 0, 0);
       context.clearRect(0, 0, width, height);
-      context.drawImage(mask, 0, 0, width, height);
+      context.drawImage(mask, inputX, inputY, inputWidth, inputHeight, 0, 0, width, height);
       context.globalCompositeOperation = 'source-in';
       context.drawImage(foreground, 0, 0);
       context.globalCompositeOperation = 'destination-over';
@@ -207,13 +213,6 @@
     return {
       track,
       setScene,
-      useFraming(value) {
-        framed = value;
-        previousState = null;
-        lastPerson = 0;
-        lastTime = -1;
-        if (!framed && !model) void prepareModel();
-      },
       stop() {
         stopped = true;
         resolveFirstFrame();

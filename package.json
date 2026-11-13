@@ -7,7 +7,6 @@
     "dev": "node server/dev.mjs"
   },
   "dependencies": {
-    "@tensorflow-models/body-pix": "2.2.1",
     "@tensorflow/tfjs": "4.9.0"
   }
 }

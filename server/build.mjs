@@ -26,9 +26,8 @@ for (const [name, type] of Object.entries(assetTypes)) {
 // Serve the CPU model and its runtime from the same origin as the video room.
 const modelFiles = {
   'tf.min.js': ['node_modules/@tensorflow/tfjs/dist/tf.min.js', 'text/javascript'],
-  'body-pix.min.js': ['node_modules/@tensorflow-models/body-pix/dist/body-pix.min.umd.js', 'text/javascript'],
-  'bodypix.json': ['server/models/bodypix.json', 'application/json'],
-  'group1-shard1of1.bin': ['server/models/group1-shard1of1.bin', 'application/octet-stream']
+  'selfie.json': ['server/models/selfie.json', 'application/json'],
+  'selfie.bin': ['server/models/selfie.bin', 'application/octet-stream']
 };
 for (const [name, [source, type]] of Object.entries(modelFiles)) {
   const file = await readFile(new URL(source, root));
