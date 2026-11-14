@@ -3,13 +3,6 @@ import { gzipSync } from 'node:zlib';
 
 const assetTypes = {
   'index.html': 'text/html; charset=utf-8',
-  'exclusive.js': 'text/javascript; charset=utf-8',
-  'exclusive-schedule.js': 'text/javascript; charset=utf-8',
-  'dj-big-mix.webp': 'image/webp',
-  'dj-big-mix.mp4': 'video/mp4',
-  'dj-old-school.mp3': 'audio/mpeg',
-  'dj-bay-funk.mp3': 'audio/mpeg',
-  'dj-late-night.mp3': 'audio/mpeg',
   'club.js': 'text/javascript; charset=utf-8',
   'stage.js': 'text/javascript; charset=utf-8',
   'karaoke.js': 'text/javascript; charset=utf-8',
@@ -28,7 +21,7 @@ const root = new URL('../', import.meta.url);
 const assets = {};
 for (const [name, type] of Object.entries(assetTypes)) {
   const file = await readFile(new URL('dist/' + name, root));
-  assets[name] = [type, /\.(webp|gz|mp3|mp4)$/.test(name) ? file.toString('base64') : file.toString('utf8')];
+  assets[name] = [type, /\.(webp|gz|mp3)$/.test(name) ? file.toString('base64') : file.toString('utf8')];
 }
 
 // Serve the selfie model and its runtimes from the same origin as the video room.
@@ -50,6 +43,4 @@ for (const [name, [source, type]] of Object.entries(modelFiles)) {
 const output = new URL('dist/server/', root);
 await mkdir(output, {recursive: true});
 const worker = await readFile(new URL('worker.mjs', import.meta.url), 'utf8');
-const schedule = await readFile(new URL('dist/exclusive-schedule.js', root), 'utf8');
-await writeFile(new URL('index.js', output),
-  'const assets = ' + JSON.stringify(assets) + ';\n' + schedule.replace('export function', 'function') + '\n' + worker);
+await writeFile(new URL('index.js', output), 'const assets = ' + JSON.stringify(assets) + ';\n' + worker);

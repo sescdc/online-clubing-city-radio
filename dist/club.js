@@ -184,7 +184,7 @@ function setRoomURL(id) {
 
 function updateSavedButton() {
   const button = byId('save-room');
-  button.hidden = current.national || current.match || current.exclusive;
+  button.hidden = current.national || current.match;
   const isSaved = saved.has(current.station.id);
   button.textContent = isSaved ? 'Remove saved city' : 'Save city';
   button.setAttribute('aria-pressed', String(isSaved));
@@ -272,35 +272,8 @@ function setMusicMode(mode) {
   }
 }
 
-function showExclusiveBooth(event) {
-  deck.classList.toggle('exclusive-mode', Boolean(event));
-  window.dispatchEvent(new CustomEvent('club-exclusive-room', {detail: event}));
-}
-
-window.clubOpenExclusive = (event, trigger) => {
-  opener = trigger;
-  current = {station: bay, room: event.room, exclusive: event};
-  window.clubParty.select(event.room);
-  setMusicMode('radio');
-  stopRadio();
-  byId('deck-label').textContent = 'EXCLUSIVE PARTY';
-  byId('deck-title').textContent = event.title;
-  byId('deck-info').textContent = 'Big Mix · ' + event.sound;
-  byId('match-stations').hidden = true;
-  byId('deck-feedback').textContent = '';
-  byId('room-link-fallback').hidden = true;
-  updateSavedButton();
-  for (const button of grid.querySelectorAll('[aria-current=true]')) button.setAttribute('aria-current','false');
-  setRoomURL(event.room);
-  deck.hidden = false;
-  showExclusiveBooth(event);
-  deck.scrollIntoView({block:'start'});
-  byId('deck-title').focus({preventScroll:true});
-};
-
 function openRoom(station, national, trigger = null, match = false, mode = 'radio') {
   const previous = current;
-  showExclusiveBooth(null);
   if (trigger && !trigger.closest('#match-stations')) opener = trigger;
   const partyRoom = match ? 'bay-stl' : national ? 'nationwide' : 'city-' + station.id;
   current = {station, national, match, room: partyRoom};
@@ -330,17 +303,17 @@ function openRoom(station, national, trigger = null, match = false, mode = 'radi
 }
 
 window.addEventListener('club-party-joining', ({detail: room}) => {
-  if (current?.room !== room || current.exclusive || musicMode !== 'radio') return;
+  if (current?.room !== room || musicMode !== 'radio') return;
   radioAudio.src = silentAudio;
   void radioAudio.play().catch(() => {});
 });
 
 window.addEventListener('club-party-joined', ({detail: room}) => {
-  if (current?.room === room && !current.exclusive && musicMode === 'radio') showRadio();
+  if (current?.room === room && musicMode === 'radio') showRadio();
 });
 
 window.addEventListener('club-party-left', ({detail: room}) => {
-  if (current?.room === room && !current.exclusive && musicMode === 'radio') showRadio();
+  if (current?.room === room && musicMode === 'radio') showRadio();
 });
 
 window.addEventListener('club-meeting', event => {
@@ -352,10 +325,8 @@ window.addEventListener('club-meeting', event => {
     stopRadio();
     window.clubKaraoke.stop();
     window.clubStage.close();
-  } else if (!current.exclusive) {
-    setMusicMode(musicMode);
   } else {
-    byId('party-screen-title').textContent = 'Video party';
+    setMusicMode(musicMode);
   }
 });
 
@@ -385,7 +356,6 @@ byId('join-national').addEventListener('click', event => {
 byId('close-player').addEventListener('click', () => {
   const oldTrigger = opener?.isConnected ? opener : grid.querySelector('[aria-current=true]') ?? search;
   window.clubParty.select(null);
-  showExclusiveBooth(null);
   deck.hidden = true;
   stopRadio();
   window.clubKaraoke.stop();

@@ -12,12 +12,11 @@
 <script src="karaoke.js" defer></script>
 <script src="stage.js" defer></script>
 <script src="club.js" defer></script>
-<script src="exclusive.js" type="module"></script>
 </head>
 <body>
 <header class="top"><div class="shell bar">
 <a class="brand" href="#"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>ONLINE<span>CLUBING</span></a>
-<nav aria-label="Main"><a href="#exclusive-parties">Exclusive parties</a><a href="#city-rooms">City rooms</a><a href="#nationwide">Nationwide floor</a></nav>
+<nav aria-label="Main"><a href="#city-rooms">City rooms</a><a href="#nationwide">Nationwide floor</a></nav>
 </div></header>
 <main class="shell">
 <section class="hero" aria-labelledby="headline">
@@ -26,26 +25,6 @@
 <p>Drop into a city party, turn on your camera and tune into live hip-hop and R&amp;B with friends.</p>
 <div class="actions"><a class="button primary" href="#city-rooms">Explore city rooms <span class="chevron down" aria-hidden="true"></span></a><a class="button outline" href="#nationwide">Join the nationwide floor <span class="chevron" aria-hidden="true"></span></a></div>
 </div>
-</section>
-<section id="exclusive-parties" class="exclusive" aria-labelledby="exclusive-title">
-  <div class="exclusive-main">
-    <div class="exclusive-copy">
-      <h2 id="exclusive-title">Exclusive Parties</h2>
-      <p>Big Mix on the decks every other night, 8–10 p.m. Pacific.</p>
-      <div class="exclusive-event">
-        <h3 id="exclusive-theme"></h3>
-        <p id="exclusive-sound-style"></p>
-        <p id="exclusive-date"></p>
-        <strong id="exclusive-countdown"></strong>
-      </div>
-      <button class="button primary" id="exclusive-enter" type="button" disabled>Room opens at 8 p.m. Pacific</button>
-    </div>
-    <img src="dj-big-mix.webp" width="640" height="790" loading="lazy" alt="Big Mix at the turntables in a red tracksuit and black bucket hat">
-  </div>
-  <div class="exclusive-schedule">
-    <h3>Coming up</h3>
-    <ol id="exclusive-upcoming"></ol>
-  </div>
 </section>
 <section class="nation" id="nationwide" aria-labelledby="nation-title">
 <div><div class="label"><span class="dot"></span> NATIONWIDE FLOOR</div><h2 id="nation-title">Coast to Coast</h2><p>A different city takes the floor every hour. Share the room and tune into the same featured station.</p></div>
@@ -130,14 +109,6 @@
 <a id="party-open-browser" class="button outline compact" target="_blank" rel="noopener" hidden>Open room in browser</a>
 </section>
 <aside class="radio-side" aria-label="Room music">
-<section class="exclusive-booth" id="exclusive-booth" aria-labelledby="exclusive-booth-title" hidden>
-  <h3 id="exclusive-booth-title">Big Mix DJ Booth</h3>
-  <p id="exclusive-dj-theme"></p>
-  <video id="exclusive-video" poster="dj-big-mix.webp" src="dj-big-mix.mp4" muted playsinline loop preload="none" aria-label="Animated Big Mix turntable performance"></video>
-  <p class="exclusive-credit">Animated DJ performance · Original mix</p>
-  <audio id="exclusive-audio" loop preload="none"></audio>
-  <button type="button" id="exclusive-sound" class="button primary compact" hidden>Enable DJ sound</button>
-</section>
 <div class="music-switch" role="group" aria-label="Room music mode">
 <button id="mode-radio" class="button outline compact" type="button" aria-pressed="true" aria-controls="radio-panel">Clubbin'</button>
 <button id="mode-karaoke" class="button outline compact" type="button" aria-pressed="false" aria-controls="karaoke-panel">Karaoke</button>
