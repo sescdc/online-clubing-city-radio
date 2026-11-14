@@ -210,3 +210,10 @@ button.button,.filter {min-height:44px}
 #photo-booth-cutout {position:absolute;inset:0}
 #photo-booth-camera {width:clamp(78px,23vw,150px);aspect-ratio:4/5;object-fit:cover;border:1px solid #8e658f;border-radius:10px;transform:scaleX(-1)}
 .photo-booth .actions {flex-wrap:wrap}
+
+.hero #headline {font-size:clamp(49px,7.3vw,104px);line-height:.91}
+@media(max-width:600px) {
+  .hero #headline {font-size:clamp(36px,10vw,60px)}
+  .brand {font-size:clamp(11px,3.2vw,14px)}
+  .bar {gap:8px}
+}

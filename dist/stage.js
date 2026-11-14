@@ -506,7 +506,7 @@
   const params = new URLSearchParams(location.search);
   const room = params.get('lyrics');
   if (room && /^(?:city-[a-z0-9-]{2,24}|nationwide|bay-stl)$/.test(room)) {
-    const title = params.get('title')?.slice(0, 70) || 'Online Clubing';
+    const title = params.get('title')?.slice(0, 70) || 'THE CENTRAL STATION';
     document.body.classList.add('stage-view-only');
     const display = el('stage-popout-view');
     display.hidden = false;

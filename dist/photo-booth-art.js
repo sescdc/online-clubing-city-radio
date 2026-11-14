@@ -113,7 +113,7 @@
     context.fillText(index === 0 ? first : index === 1 ? second : first+' / '+second,360,795,630);
     context.font = '700 16px system-ui, sans-serif';
     context.fillStyle = '#ffffff';
-    context.fillText('ONLINE CLUBING  /  '+station.code,360,838);
+    context.fillText('THE CENTRAL STATION  /  '+station.code,360,838);
     context.restore();
   }
   window.clubBoothArt = {scenes, draw};

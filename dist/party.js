@@ -99,7 +99,7 @@
       return 'Open this room directly in your browser, then join again and tap ' + labels[kind] + ' to allow access.';
     }
     if (!navigator.mediaDevices?.getUserMedia) {
-      return 'Camera and mic access needs a supported browser on the secure site. Open Online Clubing in Safari, Chrome, Edge, or Firefox.';
+      return 'Camera and mic access needs a supported browser on the secure site. Open THE CENTRAL STATION in Safari, Chrome, Edge, or Firefox.';
     }
     switch (error.name) {
       case 'NotAllowedError':

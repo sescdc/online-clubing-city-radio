@@ -66,7 +66,7 @@ async function updateMeeting(db, body, now, cutoff) {
 async function handleParty(request, env, path) {
   if (request.method !== 'POST') return reply({error: 'Method unavailable.'}, 405);
   if (request.headers.get('Origin') !== new URL(request.url).origin) {
-    return reply({error: 'Open the room from Online Clubing.'}, 403);
+    return reply({error: 'Open the room from THE CENTRAL STATION.'}, 403);
   }
   if (!env.DB) return reply({error: 'Video rooms are temporarily unavailable.'}, 503);
   const raw = await request.text();
@@ -220,7 +220,7 @@ async function handleKaraoke(request, env) {
   const now = Date.now();
   const cutoff = now - queueLifetime;
   if (request.method === 'POST') {
-    if (request.headers.get('Origin') !== url.origin) return reply({error: 'Open this room from Online Clubing.'}, 403);
+    if (request.headers.get('Origin') !== url.origin) return reply({error: 'Open this room from THE CENTRAL STATION.'}, 403);
     const raw = await request.text();
     if (raw.length > 1000) return reply({error: 'Request is too large.'}, 413);
     let input;

@@ -1,7 +1,7 @@
 (() => {
   const originals = [
     {
-      id: 'city-lights', title: 'City Lights', artist: 'Online Clubing', genre: 'Hip-hop',
+      id: 'city-lights', title: 'City Lights', artist: 'THE CENTRAL STATION', genre: 'Hip-hop',
       audio: 'karaoke-city-lights.mp3', bpm: 96,
       lyrics: [
         'Get ready…', 'I see the city lights', 'We’re coming out tonight',
@@ -11,7 +11,7 @@
       ]
     },
     {
-      id: 'after-hours', title: 'After Hours', artist: 'Online Clubing', genre: 'R&B',
+      id: 'after-hours', title: 'After Hours', artist: 'THE CENTRAL STATION', genre: 'R&B',
       audio: 'karaoke-after-hours.mp3', bpm: 84,
       lyrics: [
         'Get ready…', 'When the streets slow down', 'I can hear that sound',
