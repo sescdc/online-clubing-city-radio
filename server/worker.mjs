@@ -1,5 +1,5 @@
 const presenceWindow = 45_000;
-const roomPattern = /^(?:city-[a-z0-9-]{2,24}|nationwide|bay-stl)$/;
+const roomPattern = /^(?:city-[a-z0-9-]{2,24}|nationwide|bay-stl|exclusive-\d{4}-\d{2}-\d{2})$/;
 const uuidPattern = /^[0-9a-f-]{36}$/;
 const headers = {'Cache-Control': 'no-store'};
 
@@ -79,6 +79,10 @@ async function handleParty(request, env, path) {
   const {room} = body;
   const now = Date.now();
   const cutoff = now - presenceWindow;
+  if (room.startsWith('exclusive-') && path !== '/api/party/leave') {
+    const {events: [event], live} = exclusiveSchedule(now);
+    if (!live || event.room !== room) return reply({error: 'This exclusive party is closed.'}, 401);
+  }
   if (path === '/api/party/join') {
     const name = typeof body.name === 'string' ? body.name.trim().slice(0, 32) : '';
     if (!name) return reply({error: 'Enter a display name.'}, 400);
@@ -215,7 +219,7 @@ async function handleKaraoke(request, env) {
   if (!env.DB) return reply({error: 'The singer list is temporarily unavailable.'}, 503);
   const url = new URL(request.url);
   const room = url.searchParams.get('room');
-  if (!room || !roomPattern.test(room)) return reply({error: 'Unknown room.'}, 404);
+  if (!room || room.startsWith('exclusive-') || !roomPattern.test(room)) return reply({error: 'Unknown room.'}, 404);
   const db = env.DB.withSession?.('first-primary') ?? env.DB;
   const now = Date.now();
   const cutoff = now - queueLifetime;
@@ -354,11 +358,11 @@ export default {
     if (!Object.hasOwn(assets, key)) return new Response('Not found', {status: 404});
     if (!['GET', 'HEAD'].includes(request.method)) return new Response(null, {status: 405});
     const [type, content, encoding] = assets[key];
-    const isAudio = type === 'audio/mpeg';
-    const data = encoding || /\.(webp|gz|mp3)$/.test(key) ? Uint8Array.from(atob(content), byte => byte.charCodeAt(0)) : content;
+    const isMedia = type === 'audio/mpeg' || type === 'video/mp4';
+    const data = encoding || /\.(webp|gz|mp3|mp4)$/.test(key) ? Uint8Array.from(atob(content), byte => byte.charCodeAt(0)) : content;
     const responseHeaders = {
       'Content-Type': type,
-      'Cache-Control': key.endsWith('.webp') || isAudio ? 'public, max-age=86400' : 'no-cache'
+      'Cache-Control': key.endsWith('.webp') || isMedia ? 'public, max-age=86400' : 'no-cache'
     };
     if (encoding) {
       if (request.method === 'HEAD') return new Response(null, {headers: responseHeaders});
@@ -366,7 +370,7 @@ export default {
       const body = new Blob([data]).stream().pipeThrough(new DecompressionStream(encoding));
       return new Response(body, {headers: responseHeaders});
     }
-    if (isAudio) {
+    if (isMedia) {
       responseHeaders['Accept-Ranges'] = 'bytes';
       const range = request.headers.get('Range');
       if (range && request.method === 'GET') {
