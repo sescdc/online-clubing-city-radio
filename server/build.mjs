@@ -7,6 +7,8 @@ const assetTypes = {
   'exclusive-schedule.js': 'text/javascript; charset=utf-8',
   'dj-big-mix.webp': 'image/webp',
   'dj-big-mix.mp4': 'video/mp4',
+  'dj-90s-throwback.mp4': 'video/mp4',
+  'dj-90s-throwback.webp': 'image/webp',
   'dj-old-school.mp3': 'audio/mpeg',
   'dj-bay-funk.mp3': 'audio/mpeg',
   'dj-late-night.mp3': 'audio/mpeg',

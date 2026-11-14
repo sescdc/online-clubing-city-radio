@@ -122,3 +122,35 @@ const {events: [event], live} = exclusiveSchedule();
 render();
 if (requested === event.room && live) window.clubOpenExclusive(event, enter);
 setInterval(render, 1000);
+
+const throwbackButton = byId('throwback-play');
+const throwbackVideo = byId('throwback-video');
+const throwbackHits = byId('throwback-hits');
+const throwbackPlayer = byId('throwback-player');
+
+throwbackButton.addEventListener('click', () => {
+  throwbackHits.open = false;
+  byId('throwback-art').hidden = true;
+  throwbackVideo.hidden = false;
+  throwbackButton.textContent = 'Restart the scratch set';
+  throwbackVideo.currentTime = 0;
+  throwbackVideo.play().catch(() => {});
+});
+
+throwbackHits.addEventListener('toggle', () => {
+  if (!throwbackHits.open) {
+    throwbackPlayer.replaceChildren();
+    return;
+  }
+  throwbackVideo.pause();
+  const frame = document.createElement('iframe');
+  frame.title = 'Apple Music ’90s Hip-Hop Essentials';
+  frame.src = 'https://embed.music.apple.com/us/playlist/90s-hip-hop-essentials/pl.b1e1fe0c591a4e0cbc3eb0ebcb567705';
+  frame.allow = 'autoplay; encrypted-media; clipboard-write';
+  throwbackPlayer.replaceChildren(frame);
+});
+
+window.addEventListener('club-party-joined', () => {
+  throwbackVideo.pause();
+  throwbackHits.open = false;
+});
