@@ -11,6 +11,8 @@
 <script src="party.js" defer></script>
 <script src="karaoke.js" defer></script>
 <script src="stage.js" defer></script>
+<script src="photo-booth-art.js" defer></script>
+<script src="photo-booth.js" defer></script>
 <script src="club.js" defer></script>
 </head>
 <body>
@@ -63,6 +65,7 @@
   <button id="party-mic" class="button outline compact" type="button" aria-pressed="false">Mic off</button>
   <button id="party-camera" class="button outline compact" type="button" aria-pressed="false">Camera off</button>
   <button id="party-sound" class="button outline compact" type="button" hidden>Enable guest audio</button>
+  <button id="photo-booth-open" class="button primary compact" type="button" aria-haspopup="dialog" hidden>Photo Booth</button>
   <button id="party-meet-toggle" class="button outline compact" type="button" aria-expanded="false" aria-controls="party-meet">Meet &amp; Greet</button>
   <details class="party-backdrop">
     <summary>Background</summary>
@@ -92,6 +95,27 @@
   </details>
   <button id="party-leave" class="button leave compact" type="button">Leave video</button>
 </div>
+<dialog id="photo-booth" class="photo-booth" aria-labelledby="photo-booth-title">
+  <div class="booth-heading">
+    <h2 id="photo-booth-title">Photo Booth</h2>
+    <button id="photo-booth-close" type="button" class="button outline compact">Close booth</button>
+  </div>
+  <p>Pick a backdrop and take a photo. Your photo stays on this device.</p>
+  <div id="photo-booth-options" class="booth-options" role="group" aria-label="City photo backdrops"></div>
+  <div class="booth-views">
+    <div class="booth-composite">
+      <canvas id="photo-booth-preview" width="720" height="900" aria-label="Selected backdrop"></canvas>
+      <canvas id="photo-booth-cutout" width="720" height="900" aria-label="Finished photo" hidden></canvas>
+    </div>
+    <video id="photo-booth-camera" muted playsinline hidden aria-label="Private booth camera preview"></video>
+  </div>
+  <p id="photo-booth-status" role="status"></p>
+  <div class="actions">
+    <button id="photo-booth-start" class="button outline" type="button">Start booth camera</button>
+    <button id="photo-booth-take" class="button primary" type="button" disabled>Take photo</button>
+    <a id="photo-booth-save" class="button primary" hidden>Save photo</a>
+  </div>
+</dialog>
 <section id="party-meet" class="party-meet" aria-labelledby="party-meet-title" hidden>
   <h3 id="party-meet-title">Meet &amp; Greet</h3>
   <p id="party-meet-status" role="status"></p>

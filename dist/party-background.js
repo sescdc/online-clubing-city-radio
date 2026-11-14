@@ -85,6 +85,45 @@
     context.drawImage(image, (width - w) / 2, (height - h) / 2, w, h);
   }
 
+  window.createPartyPhotoCutout = () => {
+    const segmenter = createSegmenter();
+    const input = document.createElement('canvas');
+    input.width = input.height = 256;
+    const context = input.getContext('2d', {willReadFrequently: true});
+    return {
+      async apply(foreground) {
+        const width = Math.round(256 * foreground.width / Math.max(foreground.width, foreground.height));
+        const height = Math.round(256 * foreground.height / Math.max(foreground.width, foreground.height));
+        const x = Math.floor((256 - width) / 2);
+        const y = Math.floor((256 - height) / 2);
+        context.fillStyle = '#000';
+        context.fillRect(0, 0, 256, 256);
+        context.drawImage(foreground, x, y, width, height);
+        const mask = await segmenter.predict(context.getImageData(0, 0, 256, 256).data);
+        const alpha = context.createImageData(256, 256);
+        let person = 0;
+        for (let row = y; row < y + height; row++) {
+          for (let col = x; col < x + width; col++) {
+            const index = row * 256 + col;
+            const confidence = mask[index];
+            if (confidence > .86) person++;
+            const edge = Math.max(0, Math.min(1, (confidence - .60) / .28));
+            alpha.data[index * 4 + 3] = 255 * edge * edge * (3 - 2 * edge);
+          }
+        }
+        if (person < width * height * .005) return false;
+        context.putImageData(alpha, 0, 0);
+        const output = foreground.getContext('2d');
+        output.save();
+        output.globalCompositeOperation = 'destination-in';
+        output.drawImage(input, x, y, width, height, 0, 0, foreground.width, foreground.height);
+        output.restore();
+        return true;
+      },
+      stop: () => segmenter.stop()
+    };
+  };
+
   function drawScene(context, choice, image, width, height) {
     let fill = '#16355d';
     if (choice === 'sunset') {

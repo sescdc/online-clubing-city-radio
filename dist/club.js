@@ -278,6 +278,7 @@ function openRoom(station, national, trigger = null, match = false, mode = 'radi
   const partyRoom = match ? 'bay-stl' : national ? 'nationwide' : 'city-' + station.id;
   current = {station, national, match, room: partyRoom};
   window.clubParty.select(partyRoom);
+  window.clubPhotoBooth.select(national || match ? null : station);
   byId('match-stations').hidden = !match;
   byId('match-bay').setAttribute('aria-pressed', String(match && station.id === 'bay'));
   byId('match-stl').setAttribute('aria-pressed', String(match && station.id === 'stl'));
@@ -356,6 +357,7 @@ byId('join-national').addEventListener('click', event => {
 byId('close-player').addEventListener('click', () => {
   const oldTrigger = opener?.isConnected ? opener : grid.querySelector('[aria-current=true]') ?? search;
   window.clubParty.select(null);
+  window.clubPhotoBooth.select(null);
   deck.hidden = true;
   stopRadio();
   window.clubKaraoke.stop();

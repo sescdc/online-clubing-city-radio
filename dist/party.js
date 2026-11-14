@@ -796,6 +796,7 @@
       renderSpotlight();
     },
     joinSinger(displayName) { return joinRoom(displayName, false); },
+    cloneCamera() { return active?.camera?.readyState === 'live' ? active.camera.clone() : null; },
     isInside(selected) { return active?.room === selected && !active.channel; },
     singer(nextRoom, id, time) {
       if (active?.room === nextRoom && !active.channel) applySinger(active, id, time);

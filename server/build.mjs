@@ -3,6 +3,11 @@ import { gzipSync } from 'node:zlib';
 
 const assetTypes = {
   'index.html': 'text/html; charset=utf-8',
+  'photo-booth.js': 'text/javascript; charset=utf-8',
+  'photo-booth-art.js': 'text/javascript; charset=utf-8',
+  'booth-scene-0.webp': 'image/webp',
+  'booth-scene-1.webp': 'image/webp',
+  'booth-scene-2.webp': 'image/webp',
   'club.js': 'text/javascript; charset=utf-8',
   'stage.js': 'text/javascript; charset=utf-8',
   'karaoke.js': 'text/javascript; charset=utf-8',
