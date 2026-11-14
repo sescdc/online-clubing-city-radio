@@ -219,29 +219,3 @@ button.button,.filter {min-height:44px}
   .exclusive-schedule ol {grid-template-columns:1fr}
   .top nav {flex-wrap:wrap}
 }
-
-.throwback {
-  display:grid;
-  grid-template-columns:minmax(0,.78fr) minmax(0,1.22fr);
-  gap:clamp(18px,3vw,36px);
-  margin:clamp(15px,3vw,30px);
-  padding:clamp(18px,3.5vw,38px);
-  align-items:center;
-  background:#211426;
-  border:1px solid #a15b91;
-  border-radius:16px;
-  scroll-margin-top:86px;
-}
-.throwback-label {margin:0 0 .7rem;color:#d7fb79;font-weight:800;font-size:.75rem;letter-spacing:.14em}
-.throwback h3 {margin:0;color:#fff1dc;font-size:clamp(32px,5.3vw,72px);line-height:.94;letter-spacing:-.055em}
-.throwback-copy > p:not(.throwback-label) {color:#f1ddea;max-width:36ch}
-.throwback .primary {background:#d7fb79;border-color:#d7fb79;color:#20210e}
-.throwback-decks {aspect-ratio:16/9;overflow:hidden;background:#110c19;border-radius:12px}
-.throwback-decks img,.throwback-decks video {width:100%;height:100%;object-fit:contain}
-.throwback-hits {grid-column:1/-1;border-top:1px solid #875676;padding-top:15px}
-.throwback-hits summary {cursor:pointer;color:#ffe5f7;font-weight:700}
-.throwback-hits a {color:#d7fb79;text-decoration:underline}
-.throwback-hits iframe {display:block;width:100%;height:440px;margin-top:14px;border:0;border-radius:12px;background:#17101c}
-@media(max-width:700px) {
-  .throwback {grid-template-columns:minmax(0,1fr)}
-}
